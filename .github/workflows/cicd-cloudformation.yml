@@ -1,0 +1,99 @@
+name: CI/CD - Terraform Multi-Ambiente
+ 
+on:
+  pull_request:
+    branches:
+      - main          # Valida quando abre PR para main
+  push:
+    branches:
+      - main          # Deploy quando faz merge na main
+ 
+env:
+  AWS_REGION: sa-east-1
+  TF_DIR: ./terraform   # 🔧 Pasta onde ficam seus arquivos .tf
+ 
+jobs:
+  # ─────────────────────────────────────────
+  # Job 1: Validação (roda em PRs para main)
+  # ─────────────────────────────────────────
+  validate:
+    name: Terraform Validate (PR)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+ 
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+ 
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+ 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0  # 🔧 Ajuste para sua versão
+ 
+      - name: Terraform Init
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform init \
+            -backend-config="key=main/terraform.tfstate"
+ 
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform validate
+ 
+      - name: Terraform Plan (sem aplicar)
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform plan \
+            -var-file="main.tfvars"
+ 
+  # ─────────────────────────────────────────
+  # Job 2: Deploy (roda apenas em push na main)
+  # ─────────────────────────────────────────
+  deploy:
+    name: Terraform Deploy (main → AWS)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+ 
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+ 
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+ 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0  # 🔧 Ajuste para sua versão
+ 
+      - name: Terraform Init
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform init \
+            -backend-config="key=main/terraform.tfstate"
+ 
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform validate
+ 
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform plan \
+            -var-file="main.tfvars" \
+            -out=tfplan
+ 
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform apply -auto-approve tfplan
