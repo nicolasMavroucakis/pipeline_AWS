@@ -40,9 +40,9 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "meu-bucket-tfstate"   # 🔧 Altere para seu bucket
-    region = "sa-east-1"
-    # key é injetada dinamicamente pelo workflow
+    bucket = "awsimt2026nicolasgustavo"   
+    region = "sus-east-1"
+
   }
 }
 
