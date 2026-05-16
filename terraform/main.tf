@@ -119,7 +119,7 @@ resource "aws_route_table_association" "public" {
 # Porta 22: acesso SSH para debug (recomendado remover em produção)
 # ─────────────────────────────────────────
 resource "aws_security_group" "ec2" {
-  name        = "sg-ec2-${var.environment}"
+  name        = "ec2-${var.environment}"
   description = "Security group da EC2 - fase 2"
   vpc_id      = aws_vpc.main.id
 
