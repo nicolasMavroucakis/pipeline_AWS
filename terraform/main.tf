@@ -155,7 +155,7 @@ resource "aws_security_group" "ec2" {
   }
 
   tags = {
-    Name        = "sg-ec2-${var.environment}"
+    Name        = "ec2-${var.environment}"
     Environment = var.environment
   }
 }
