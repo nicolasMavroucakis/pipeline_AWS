@@ -41,7 +41,7 @@ terraform {
 
   backend "s3" {
     bucket = "awsimt2026nicolasgustavo"   
-    region = "sus-east-1"
+    region = "us-east-1"
 
   }
 }
