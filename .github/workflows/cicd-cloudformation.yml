@@ -9,7 +9,7 @@ on:
       - main          # Deploy quando faz merge na main
  
 env:
-  AWS_REGION: sa-east-1
+  AWS_REGION: us-east-1
   TF_DIR: ./terraform   # 🔧 Pasta onde ficam seus arquivos .tf
  
 jobs:

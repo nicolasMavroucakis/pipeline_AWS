@@ -11,16 +11,21 @@ variable "aws_region" {
   type        = string
 }
 
-variable "lambda_timeout" {
-  description = "Timeout da Lambda em segundos"
-  type        = number
-  default     = 30
+variable "instance_type" {
+  description = "Tipo da instância EC2"
+  type        = string
+  default     = "t2.micro"
 }
 
-variable "lambda_memory" {
-  description = "Memória da Lambda em MB"
-  type        = number
-  default     = 128
+variable "ami_id" {
+  description = "AMI Ubuntu — us-east-1: ami-0fc5d935ebf8bc3bc"
+  type        = string
+}
+
+variable "key_name" {
+  description = "Nome do Key Pair para acesso SSH (opcional)"
+  type        = string
+  default     = ""
 }
 
 # ─────────────────────────────────────────
@@ -37,7 +42,7 @@ terraform {
   backend "s3" {
     bucket = "meu-bucket-tfstate"   # 🔧 Altere para seu bucket
     region = "sa-east-1"
-    # a "key" é injetada dinamicamente pelo workflow do GitHub Actions
+    # key é injetada dinamicamente pelo workflow
   }
 }
 
@@ -46,67 +51,141 @@ provider "aws" {
 }
 
 # ─────────────────────────────────────────
-# IAM Role da Lambda
+# VPC
 # ─────────────────────────────────────────
-resource "aws_iam_role" "lambda_exec" {
-  name = "lambda-exec-role-${var.environment}"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action    = "sts:AssumeRole"
-      Effect    = "Allow"
-      Principal = { Service = "lambda.amazonaws.com" }
-    }]
-  })
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
 
   tags = {
-    Environment = var.environment
-  }
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_basic" {
-  role       = aws_iam_role.lambda_exec.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
-
-# ─────────────────────────────────────────
-# CloudWatch Log Group
-# ─────────────────────────────────────────
-resource "aws_cloudwatch_log_group" "lambda_logs" {
-  name              = "/aws/lambda/minha-lambda-${var.environment}"
-  retention_in_days = 7
-
-  tags = {
+    Name        = "vpc-${var.environment}"
     Environment = var.environment
   }
 }
 
 # ─────────────────────────────────────────
-# Lambda Function
+# Subnet pública (AZ-1)
 # ─────────────────────────────────────────
-resource "aws_lambda_function" "minha_lambda" {
-  function_name = "minha-lambda-${var.environment}"
-  role          = aws_iam_role.lambda_exec.arn
-  handler       = "index.handler"
-  runtime       = "nodejs20.x"
-  filename      = "lambda.zip"        # 🔧 Seu arquivo zip com o código
-  timeout       = var.lambda_timeout
-  memory_size   = var.lambda_memory
-
-  environment {
-    variables = {
-      ENV    = var.environment
-      REGION = var.aws_region
-    }
-  }
-
-  depends_on = [
-    aws_cloudwatch_log_group.lambda_logs,
-    aws_iam_role_policy_attachment.lambda_basic
-  ]
+resource "aws_subnet" "public" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "${var.aws_region}a"
+  map_public_ip_on_launch = true   # EC2 recebe IP público automaticamente
 
   tags = {
+    Name        = "subnet-public-${var.environment}"
+    Environment = var.environment
+  }
+}
+
+# ─────────────────────────────────────────
+# Internet Gateway
+# ─────────────────────────────────────────
+resource "aws_internet_gateway" "igw" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name        = "igw-${var.environment}"
+    Environment = var.environment
+  }
+}
+
+# ─────────────────────────────────────────
+# Route Table — subnet pública → IGW
+# ─────────────────────────────────────────
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.igw.id
+  }
+
+  tags = {
+    Name        = "rt-public-${var.environment}"
+    Environment = var.environment
+  }
+}
+
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
+
+# ─────────────────────────────────────────
+# Security Group — EC2
+# Porta 80: acesso à aplicação web
+# Porta 22: acesso SSH para debug (recomendado remover em produção)
+# ─────────────────────────────────────────
+resource "aws_security_group" "ec2" {
+  name        = "sg-ec2-${var.environment}"
+  description = "Security group da EC2 - fase 2"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "App porta 3000"
+    from_port   = 3000
+    to_port     = 3000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "sg-ec2-${var.environment}"
+    Environment = var.environment
+  }
+}
+
+# ─────────────────────────────────────────
+# EC2 — Ubuntu com app + banco local
+# user_data instala o código conforme o projeto
+# ─────────────────────────────────────────
+resource "aws_instance" "app" {
+  ami                    = var.ami_id
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.ec2.id]
+  key_name               = var.key_name != "" ? var.key_name : null
+
+  # Script de inicialização — instala dependências e sobe a aplicação
+  user_data = <<-EOF
+    #!/bin/bash
+    apt-get update -y
+    apt-get install -y nodejs npm git
+
+    # Clonar o código da aplicação (SolutionCodePOC do lab)
+    git clone https://github.com/seu-usuario/seu-repo-app.git /home/ubuntu/app
+    cd /home/ubuntu/app
+    npm install
+    npm start &
+  EOF
+
+  tags = {
+    Name        = "ec2-app-${var.environment}"
     Environment = var.environment
     ManagedBy   = "Terraform"
   }
@@ -115,10 +194,17 @@ resource "aws_lambda_function" "minha_lambda" {
 # ─────────────────────────────────────────
 # Outputs
 # ─────────────────────────────────────────
-output "lambda_name" {
-  value = aws_lambda_function.minha_lambda.function_name
+output "ec2_public_ip" {
+  description = "IP público da EC2 — use para acessar a aplicação no browser"
+  value       = aws_instance.app.public_ip
 }
 
-output "lambda_arn" {
-  value = aws_lambda_function.minha_lambda.arn
+output "ec2_public_dns" {
+  description = "DNS público da EC2"
+  value       = aws_instance.app.public_dns
+}
+
+output "app_url" {
+  description = "URL da aplicação"
+  value       = "http://${aws_instance.app.public_ip}:3000"
 }
