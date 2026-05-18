@@ -1,6 +1,6 @@
 # ─── Ambiente: MAIN (fase 2) ───────────────
 environment   = "main"
-aws_region    = "sa-east-1"   # 🔧 região do seu lab
+aws_region    = "us-east-1"   # 🔧 região do seu lab
 
 # AMI Ubuntu 22.04 LTS — us-east-1
 # Para outras regiões consulte: https://cloud-images.ubuntu.com/locator/ec2/
