@@ -1,11 +1,5 @@
-# ─── Ambiente: MAIN (fase 2) ───────────────
 environment   = "main"
-aws_region    = "us-east-1"   # 🔧 região do seu lab
-
-# AMI Ubuntu 22.04 LTS — us-east-1
-# Para outras regiões consulte: https://cloud-images.ubuntu.com/locator/ec2/
+aws_region    = "us-east-1"
 ami_id        = "ami-0fc5d935ebf8bc3bc"
-
-instance_type = "t2.micro"    # free tier elegível
-
-# key_name    = "meu-key-pair"  # 🔧 descomente se quiser acesso SSH
+instance_type = "t2.micro"
+key_name      = "EC2_key_pair"   # ← descomente e coloque o nome da sua key
