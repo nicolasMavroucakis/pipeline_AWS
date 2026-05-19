@@ -178,17 +178,37 @@ mysql -u root -e "USE STUDENTS; CREATE TABLE students(id INT NOT NULL AUTO_INCRE
 sed -i 's/.*bind-address.*/bind-address = 0.0.0.0/' /etc/mysql/mysql.conf.d/mysqld.cnf
 systemctl enable mysql
 service mysql restart
-export APP_DB_HOST=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)
+TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+LOCAL_IP=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4)
+export APP_DB_HOST=$LOCAL_IP
 export APP_DB_USER=nodeapp
 export APP_DB_PASSWORD=student12
 export APP_DB_NAME=STUDENTS
 export APP_PORT=80
 npm start &
-echo '#!/bin/bash -xe
-cd /home/ubuntu/resources/codebase_partner
-export APP_PORT=80
-npm start' > /etc/rc.local
-chmod +x /etc/rc.local
+
+cat > /etc/systemd/system/nodeapp.service <<'UNIT'
+[Unit]
+Description=Node.js Student App
+After=network.target mysql.service
+
+[Service]
+WorkingDirectory=/home/ubuntu/resources/codebase_partner
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=5
+Environment=APP_PORT=80
+Environment=APP_DB_HOST=127.0.0.1
+Environment=APP_DB_USER=nodeapp
+Environment=APP_DB_PASSWORD=student12
+Environment=APP_DB_NAME=STUDENTS
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable nodeapp
 EOF
 
   tags = {
