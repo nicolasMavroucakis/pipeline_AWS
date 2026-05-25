@@ -416,8 +416,8 @@ data "aws_iam_instance_profile" "lab_profile" {
 # Lambda Function — Usa LabRole existente
 # ─────────────────────────────────────────
 resource "aws_lambda_function" "db_init" {
-  filename         = data.archive_file.lambda_zip.output_path
-  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+  filename         = "${path.module}/lambda_function_manual.zip"
+  source_code_hash = filebase64sha256("${path.module}/lambda_function_manual.zip")
   function_name    = "db-init-${var.environment}"
   role             = data.aws_iam_role.lab_role.arn
   handler          = "lambda_index.handler"
