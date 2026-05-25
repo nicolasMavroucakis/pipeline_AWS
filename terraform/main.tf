@@ -402,105 +402,25 @@ data "archive_file" "lambda_zip" {
 }
 
 # ─────────────────────────────────────────
-# IAM Role para EC2 acessar Secrets Manager
+# Usar IAM Profile existente do Lab
 # ─────────────────────────────────────────
-resource "aws_iam_role" "ec2_secrets_role" {
-  name = "ec2-secrets-role-${var.environment}"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = {
-    Name        = "ec2-secrets-role-${var.environment}"
-    Environment = var.environment
-    Phase       = "3"
-  }
-}
-
-resource "aws_iam_role_policy" "ec2_secrets_policy" {
-  name = "ec2-secrets-policy-${var.environment}"
-  role = aws_iam_role.ec2_secrets_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue"
-        ]
-        Resource = aws_secretsmanager_secret.db_credentials.arn
-      }
-    ]
-  })
+data "aws_iam_role" "lab_role" {
+  name = "LabRole"
 }
 
 resource "aws_iam_instance_profile" "ec2_profile" {
-  name = "ec2-instance-profile-${var.environment}"
-  role = aws_iam_role.ec2_secrets_role.name
+  name = "LabInstanceProfile"
+  role = data.aws_iam_role.lab_role.name
 }
 
 # ─────────────────────────────────────────
-# IAM Role para Lambda
-# ─────────────────────────────────────────
-resource "aws_iam_role" "lambda_role" {
-  name = "lambda-db-init-role-${var.environment}"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "lambda.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "lambda_vpc_execution" {
-  role       = aws_iam_role.lambda_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
-}
-
-resource "aws_iam_role_policy" "lambda_secrets_policy" {
-  name = "lambda-secrets-policy"
-  role = aws_iam_role.lambda_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue"
-        ]
-        Resource = aws_secretsmanager_secret.db_credentials.arn
-      }
-    ]
-  })
-}
-
-# ─────────────────────────────────────────
-# Lambda Function
+# Lambda Function — Usa LabRole existente
 # ─────────────────────────────────────────
 resource "aws_lambda_function" "db_init" {
   filename         = data.archive_file.lambda_zip.output_path
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
   function_name    = "db-init-${var.environment}"
-  role             = aws_iam_role.lambda_role.arn
+  role             = data.aws_iam_role.lab_role.arn
   handler          = "lambda_index.handler"
   runtime          = "python3.11"
   timeout          = 60
@@ -518,7 +438,6 @@ resource "aws_lambda_function" "db_init" {
   }
 
   tags = {
-    Name        = "db-init-${var.environment}"
     Environment = var.environment
     Phase       = "3"
   }
@@ -554,7 +473,6 @@ resource "aws_cloud9_environment_ec2" "main" {
   automatic_stop_time_minutes = 30
 
   tags = {
-    Name        = "cloud9-${var.environment}"
     Environment = var.environment
     Phase       = "3"
   }

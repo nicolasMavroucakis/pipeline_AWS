@@ -4,20 +4,10 @@
 
 environment   = "main"
 aws_region    = "us-east-1"
-
-# AMI Ubuntu 22.04 LTS — us-east-1
-# Para outras regiões: https://cloud-images.ubuntu.com/locator/ec2/
 ami_id        = "ami-0fc5d935ebf8bc3bc"
-
-# Tipo de instância (free tier elegível)
 instance_type = "t2.micro"
+key_name      = "EC2_key_pair"
 
-# 🔧 Descomente e substitua pelo seu key pair se quiser acesso SSH
-key_name = "EC2_key_pair"
-
-# ─────────────────────────────────────────
 # RDS MySQL Credentials
-# ⚠️ IMPORTANTE: Não commitar isso em Git! Use terraform.tfvars.local
-# ─────────────────────────────────────────
 db_master_username = "admin"
-db_master_password = "admin"  # 🔐 MUDE ISSO!
+db_master_password = "Admin@12345"
