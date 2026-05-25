@@ -123,7 +123,7 @@ resource "aws_route_table_association" "public" {
 # Porta 3306: MySQL (local, acessível de dentro da VPC)
 # ─────────────────────────────────────────
 resource "aws_security_group" "ec2" {
-  name        = "ec2-${var.environment}"
+  name        = "ec2-${var.environment}-2"
   description = "Security group da EC2 - fase 2 (app + MySQL local)"
   vpc_id      = aws_vpc.main.id
 
