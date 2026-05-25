@@ -20,4 +20,4 @@ key_name = "EC2_key_pair"
 # ⚠️ IMPORTANTE: Não commitar isso em Git! Use terraform.tfvars.local
 # ─────────────────────────────────────────
 db_master_username = "admin"
-db_master_password = "ChangeMeToSecurePassword123!"  # 🔐 MUDE ISSO!
+db_master_password = "admin"  # 🔐 MUDE ISSO!
