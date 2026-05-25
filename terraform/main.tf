@@ -28,6 +28,19 @@ variable "key_name" {
   default     = ""
 }
 
+variable "db_master_username" {
+  description = "Usuário master do RDS"
+  type        = string
+  default     = "admin"
+  sensitive   = true
+}
+
+variable "db_master_password" {
+  description = "Senha master do RDS"
+  type        = string
+  sensitive   = true
+}
+
 # ─────────────────────────────────────────
 # Provider
 # ─────────────────────────────────────────
@@ -60,12 +73,12 @@ resource "aws_vpc" "main" {
   tags = {
     Name        = "vpc-${var.environment}"
     Environment = var.environment
-    Phase       = "2"
+    Phase       = "3"
   }
 }
 
 # ─────────────────────────────────────────
-# Subnet Pública (AZ-1)
+# Subnet Pública (AZ-1) — para EC2 e NAT Gateway
 # ─────────────────────────────────────────
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
@@ -76,7 +89,37 @@ resource "aws_subnet" "public" {
   tags = {
     Name        = "subnet-public-${var.environment}"
     Environment = var.environment
-    Phase       = "2"
+    Phase       = "3"
+    Type        = "Public"
+  }
+}
+
+# ─────────────────────────────────────────
+# Subnets Privadas (AZ-1 e AZ-2) — para RDS
+# ─────────────────────────────────────────
+resource "aws_subnet" "private_az1" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.2.0/24"
+  availability_zone = "${var.aws_region}a"
+
+  tags = {
+    Name        = "subnet-private-az1-${var.environment}"
+    Environment = var.environment
+    Phase       = "3"
+    Type        = "Private"
+  }
+}
+
+resource "aws_subnet" "private_az2" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.3.0/24"
+  availability_zone = "${var.aws_region}b"
+
+  tags = {
+    Name        = "subnet-private-az2-${var.environment}"
+    Environment = var.environment
+    Phase       = "3"
+    Type        = "Private"
   }
 }
 
@@ -89,12 +132,43 @@ resource "aws_internet_gateway" "igw" {
   tags = {
     Name        = "igw-${var.environment}"
     Environment = var.environment
-    Phase       = "2"
+    Phase       = "3"
   }
 }
 
 # ─────────────────────────────────────────
-# Route Table — Subnet Pública → IGW
+# Elastic IP para NAT Gateway
+# ─────────────────────────────────────────
+resource "aws_eip" "nat" {
+  domain = "vpc"
+
+  tags = {
+    Name        = "eip-nat-${var.environment}"
+    Environment = var.environment
+    Phase       = "3"
+  }
+
+  depends_on = [aws_internet_gateway.igw]
+}
+
+# ─────────────────────────────────────────
+# NAT Gateway — na Subnet Pública
+# ─────────────────────────────────────────
+resource "aws_nat_gateway" "nat" {
+  allocation_id = aws_eip.nat.id
+  subnet_id     = aws_subnet.public.id
+
+  tags = {
+    Name        = "nat-${var.environment}"
+    Environment = var.environment
+    Phase       = "3"
+  }
+
+  depends_on = [aws_internet_gateway.igw]
+}
+
+# ─────────────────────────────────────────
+# Route Table Pública — Subnet Pública → IGW
 # ─────────────────────────────────────────
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
@@ -107,7 +181,7 @@ resource "aws_route_table" "public" {
   tags = {
     Name        = "rt-public-${var.environment}"
     Environment = var.environment
-    Phase       = "2"
+    Phase       = "3"
   }
 }
 
@@ -117,14 +191,41 @@ resource "aws_route_table_association" "public" {
 }
 
 # ─────────────────────────────────────────
-# Security Group — EC2
+# Route Table Privada — Subnets Privadas → NAT Gateway
+# ─────────────────────────────────────────
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_nat_gateway.nat.id
+  }
+
+  tags = {
+    Name        = "rt-private-${var.environment}"
+    Environment = var.environment
+    Phase       = "3"
+  }
+}
+
+resource "aws_route_table_association" "private_az1" {
+  subnet_id      = aws_subnet.private_az1.id
+  route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table_association" "private_az2" {
+  subnet_id      = aws_subnet.private_az2.id
+  route_table_id = aws_route_table.private.id
+}
+
+# ─────────────────────────────────────────
+# Security Group — EC2 (apenas app Node.js)
 # Porta 80: HTTP (aplicação web)
 # Porta 22: SSH (acesso remoto)
-# Porta 3306: MySQL (local, acessível de dentro da VPC)
 # ─────────────────────────────────────────
 resource "aws_security_group" "ec2" {
-  name        = "ec2-${var.environment}-2"
-  description = "Security group da EC2 - fase 2 (app + MySQL local)"
+  name        = "ec2-${var.environment}-3"
+  description = "Security group da EC2 - fase 3 (apenas app Node.js)"
   vpc_id      = aws_vpc.main.id
 
   # HTTP — aplicação web
@@ -145,15 +246,6 @@ resource "aws_security_group" "ec2" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # MySQL — acesso local (opcional, apenas para debug)
-  ingress {
-    description = "MySQL local"
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]  # Apenas de dentro da VPC
-  }
-
   # Egress — permitir tudo
   egress {
     from_port   = 0
@@ -165,13 +257,117 @@ resource "aws_security_group" "ec2" {
   tags = {
     Name        = "ec2-${var.environment}"
     Environment = var.environment
-    Phase       = "2"
+    Phase       = "3"
   }
 }
 
 # ─────────────────────────────────────────
-# EC2 — Ubuntu com app + MySQL local
-# Script oficial do AWS Academy (UserdataScript-phase-2.sh)
+# Security Group — RDS (MySQL)
+# Acessa apenas da EC2
+# ─────────────────────────────────────────
+resource "aws_security_group" "rds" {
+  name        = "rds-${var.environment}-3"
+  description = "Security group do RDS - fase 3 (MySQL)"
+  vpc_id      = aws_vpc.main.id
+
+  # MySQL — apenas da EC2
+  ingress {
+    description     = "MySQL from EC2"
+    from_port       = 3306
+    to_port         = 3306
+    protocol        = "tcp"
+    security_groups = [aws_security_group.ec2.id]
+  }
+
+  # Egress — permitir tudo (geralmente não usado para RDS)
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "rds-${var.environment}"
+    Environment = var.environment
+    Phase       = "3"
+  }
+}
+
+# ─────────────────────────────────────────
+# DB Subnet Group — para RDS em subnets privadas
+# ─────────────────────────────────────────
+resource "aws_db_subnet_group" "main" {
+  name       = "db-subnet-group-${var.environment}"
+  subnet_ids = [aws_subnet.private_az1.id, aws_subnet.private_az2.id]
+
+  tags = {
+    Name        = "db-subnet-group-${var.environment}"
+    Environment = var.environment
+    Phase       = "3"
+  }
+}
+
+# ─────────────────────────────────────────
+# RDS MySQL Instance
+# ─────────────────────────────────────────
+resource "aws_db_instance" "mysql" {
+  identifier            = "mysql-${var.environment}"
+  engine                = "mysql"
+  engine_version        = "8.0"
+  instance_class        = "db.t3.micro"
+  allocated_storage     = 20
+  storage_type          = "gp2"
+  storage_encrypted     = false
+
+  db_name  = "STUDENTS"
+  username = var.db_master_username
+  password = var.db_master_password
+
+  db_subnet_group_name   = aws_db_subnet_group.main.name
+  vpc_security_group_ids = [aws_security_group.rds.id]
+
+  multi_az               = true
+  publicly_accessible    = false
+  skip_final_snapshot    = true
+
+  tags = {
+    Name        = "mysql-${var.environment}"
+    Environment = var.environment
+    Phase       = "3"
+  }
+}
+
+# ─────────────────────────────────────────
+# AWS Secrets Manager — Credenciais do RDS
+# ─────────────────────────────────────────
+resource "aws_secretsmanager_secret" "db_credentials" {
+  name                    = "rds/${var.environment}/db-credentials"
+  description             = "Credenciais do banco de dados RDS"
+  recovery_window_in_days = 7
+
+  tags = {
+    Name        = "db-credentials-${var.environment}"
+    Environment = var.environment
+    Phase       = "3"
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "db_credentials" {
+  secret_id = aws_secretsmanager_secret.db_credentials.id
+  secret_string = jsonencode({
+    username = var.db_master_username
+    password = var.db_master_password
+    engine   = "mysql"
+    host     = aws_db_instance.mysql.endpoint
+    port     = 3306
+    dbname   = "STUDENTS"
+  })
+}
+
+# ─────────────────────────────────────────
+# EC2 — Ubuntu com aplicação Node.js
+# Conecta ao RDS via Secrets Manager
 # ─────────────────────────────────────────
 resource "aws_instance" "app" {
   ami                    = var.ami_id
@@ -179,13 +375,14 @@ resource "aws_instance" "app" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.ec2.id]
   key_name               = var.key_name != "" ? var.key_name : null
+  iam_instance_profile   = "LabInstanceProfile"
 
-  # Script de inicialização — instala app + MySQL + credenciais
+  # Script de inicialização — apenas app Node.js (sem MySQL local)
   user_data = base64encode(<<EOF
 #!/bin/bash -xe
 export DEBIAN_FRONTEND=noninteractive
 apt update -y
-apt install -y nodejs unzip wget npm mysql-server curl jq
+apt install -y nodejs unzip wget npm curl jq awscli
 
 # Baixar e descompactar o código da aplicação
 wget https://aws-tc-largeobjects.s3.us-west-2.amazonaws.com/CUR-TF-200-ACCAP1-1-91571/1-lab-capstone-project-1/code.zip -P /home/ubuntu
@@ -194,56 +391,65 @@ unzip code.zip -x "resources/codebase_partner/node_modules/*"
 cd resources/codebase_partner
 npm install aws aws-sdk
 
-# Criar usuário e banco de dados do MySQL
-mysql -u root -e "CREATE USER 'nodeapp' IDENTIFIED WITH mysql_native_password BY 'student12';"
-mysql -u root -e "GRANT all privileges on *.* to 'nodeapp'@'%';"
-mysql -u root -e "CREATE DATABASE STUDENTS;"
-mysql -u root -e "USE STUDENTS; CREATE TABLE students(id INT NOT NULL AUTO_INCREMENT, name VARCHAR(255) NOT NULL, address VARCHAR(255) NOT NULL, city VARCHAR(255) NOT NULL, state VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL, phone VARCHAR(100) NOT NULL, PRIMARY KEY (id));"
+# Script para obter credenciais do Secrets Manager e iniciar a app
+cat > /home/ubuntu/start-app.sh << 'STARTEOF'
+#!/bin/bash
+SECRET_NAME="rds/${var.environment}/db-credentials"
+REGION="${var.aws_region}"
 
-# Configurar MySQL para aceitar conexões remotas
-sed -i 's/.*bind-address.*/bind-address = 0.0.0.0/' /etc/mysql/mysql.conf.d/mysqld.cnf
-systemctl enable mysql
-service mysql restart
+# Obter secret do Secrets Manager
+SECRET=$(aws secretsmanager get-secret-value \
+  --secret-id "$SECRET_NAME" \
+  --region "$REGION" \
+  --query 'SecretString' \
+  --output text)
 
-# Obter IP privado da instância
-PRIVATE_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)
-
-# Definir variáveis de ambiente
-export APP_DB_HOST=$PRIVATE_IP
-export APP_DB_USER=nodeapp
-export APP_DB_PASSWORD=student12
-export APP_DB_NAME=STUDENTS
+# Extrair credenciais
+export APP_DB_HOST=$(echo $SECRET | jq -r '.host' | cut -d: -f1)
+export APP_DB_USER=$(echo $SECRET | jq -r '.username')
+export APP_DB_PASSWORD=$(echo $SECRET | jq -r '.password')
+export APP_DB_NAME=$(echo $SECRET | jq -r '.dbname')
 export APP_PORT=80
 
-# Persistir variáveis de ambiente
-cat > /etc/environment << ENVEOF
-APP_DB_HOST=$PRIVATE_IP
-APP_DB_USER=nodeapp
-APP_DB_PASSWORD=student12
-APP_DB_NAME=STUDENTS
-APP_PORT=80
-ENVEOF
-
-# Iniciar a aplicação em background
-npm start &
-
-# Criar script de restart automático
-cat > /etc/rc.local << RCEOF
-#!/bin/bash -xe
-source /etc/environment
+# Iniciar a aplicação
 cd /home/ubuntu/resources/codebase_partner
 npm start
-RCEOF
-chmod +x /etc/rc.local
+STARTEOF
+
+chmod +x /home/ubuntu/start-app.sh
+
+# Criar script de restart automático via systemd
+cat > /etc/systemd/system/nodeapp.service << 'SERVICEEOF'
+[Unit]
+Description=Node.js Student Application
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/ubuntu/resources/codebase_partner
+ExecStart=/home/ubuntu/start-app.sh
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+SERVICEEOF
+
+systemctl daemon-reload
+systemctl enable nodeapp.service
+systemctl start nodeapp.service
 EOF
   )
 
   tags = {
     Name        = "ec2-app-${var.environment}"
     Environment = var.environment
-    Phase       = "2"
+    Phase       = "3"
     ManagedBy   = "Terraform"
   }
+
+  depends_on = [aws_db_instance.mysql]
 
   lifecycle {
     create_before_destroy = true
@@ -268,6 +474,26 @@ output "app_url" {
   value       = "http://${aws_instance.app.public_ip}"
 }
 
+output "rds_endpoint" {
+  description = "Endpoint do RDS MySQL"
+  value       = aws_db_instance.mysql.endpoint
+}
+
+output "rds_address" {
+  description = "Endereço do RDS (sem porta)"
+  value       = aws_db_instance.mysql.address
+}
+
+output "rds_port" {
+  description = "Porta do RDS"
+  value       = aws_db_instance.mysql.port
+}
+
+output "secret_name" {
+  description = "Nome da secret no Secrets Manager"
+  value       = aws_secretsmanager_secret.db_credentials.name
+}
+
 output "vpc_id" {
   description = "ID da VPC"
   value       = aws_vpc.main.id
@@ -278,12 +504,32 @@ output "subnet_public_id" {
   value       = aws_subnet.public.id
 }
 
-output "security_group_id" {
+output "subnet_private_az1_id" {
+  description = "ID da subnet privada AZ-1"
+  value       = aws_subnet.private_az1.id
+}
+
+output "subnet_private_az2_id" {
+  description = "ID da subnet privada AZ-2"
+  value       = aws_subnet.private_az2.id
+}
+
+output "security_group_ec2_id" {
   description = "ID do Security Group da EC2"
   value       = aws_security_group.ec2.id
+}
+
+output "security_group_rds_id" {
+  description = "ID do Security Group do RDS"
+  value       = aws_security_group.rds.id
 }
 
 output "ec2_instance_id" {
   description = "ID da instância EC2"
   value       = aws_instance.app.id
+}
+
+output "nat_gateway_ip" {
+  description = "IP público do NAT Gateway"
+  value       = aws_eip.nat.public_ip
 }

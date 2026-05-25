@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────
-# Fase 2 — VPC + EC2 com app + MySQL local
+# Fase 3 — VPC + EC2 com app + RDS MySQL
 # ─────────────────────────────────────────
 
 environment   = "main"
@@ -14,3 +14,10 @@ instance_type = "t2.micro"
 
 # 🔧 Descomente e substitua pelo seu key pair se quiser acesso SSH
 key_name = "EC2_key_pair"
+
+# ─────────────────────────────────────────
+# RDS MySQL Credentials
+# ⚠️ IMPORTANTE: Não commitar isso em Git! Use terraform.tfvars.local
+# ─────────────────────────────────────────
+db_master_username = "admin"
+db_master_password = "ChangeMeToSecurePassword123!"  # 🔐 MUDE ISSO!
