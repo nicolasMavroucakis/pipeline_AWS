@@ -549,7 +549,7 @@ resource "aws_cloud9_environment_ec2" "main" {
   name                        = "nodeapp-env-${var.environment}"
   description                 = "Cloud9 environment para Node.js app"
   instance_type               = "t3.micro"
-  image_id                    = var.ami_id
+  image_id                    = "ubuntu-22.04-x86_64"
   subnet_id                   = aws_subnet.public.id
   automatic_stop_time_minutes = 30
 
@@ -706,4 +706,34 @@ output "vpc_id" {
 output "nat_gateway_ip" {
   description = "IP público do NAT Gateway"
   value       = aws_eip.nat.public_ip
+}
+
+output "ec2_instance_id" {
+  description = "ID da instância EC2"
+  value       = aws_instance.app.id
+}
+
+output "security_group_ec2_id" {
+  description = "ID do Security Group da EC2"
+  value       = aws_security_group.ec2.id
+}
+
+output "security_group_rds_id" {
+  description = "ID do Security Group do RDS"
+  value       = aws_security_group.rds.id
+}
+
+output "subnet_public_id" {
+  description = "ID da subnet pública"
+  value       = aws_subnet.public.id
+}
+
+output "subnet_private_az1_id" {
+  description = "ID da subnet privada AZ-1"
+  value       = aws_subnet.private_az1.id
+}
+
+output "subnet_private_az2_id" {
+  description = "ID da subnet privada AZ-2"
+  value       = aws_subnet.private_az2.id
 }
