@@ -546,10 +546,12 @@ resource "aws_lambda_invocation" "db_init_invoke" {
 # Cloud9 Environment
 # ─────────────────────────────────────────
 resource "aws_cloud9_environment_ec2" "main" {
-  name          = "nodeapp-env-${var.environment}"
-  description   = "Cloud9 environment para Node.js app"
-  instance_type = "t3.micro"
-  subnet_id     = aws_subnet.public.id
+  name                        = "nodeapp-env-${var.environment}"
+  description                 = "Cloud9 environment para Node.js app"
+  instance_type               = "t3.micro"
+  image_id                    = var.ami_id
+  subnet_id                   = aws_subnet.public.id
+  automatic_stop_time_minutes = 30
 
   tags = {
     Name        = "cloud9-${var.environment}"
