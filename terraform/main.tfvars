@@ -10,4 +10,4 @@ key_name      = "EC2_key_pair"
 
 # RDS MySQL Credentials
 db_master_username = "admin"
-db_master_password = "Admin@12345"
+db_master_password = "AdminPass12345"
