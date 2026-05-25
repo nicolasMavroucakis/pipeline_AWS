@@ -290,38 +290,6 @@ resource "aws_security_group" "rds" {
 }
 
 # ─────────────────────────────────────────
-# Security Group para Lambda (acesso ao RDS)
-# ─────────────────────────────────────────
-resource "aws_security_group" "lambda" {
-  name        = "lambda-${var.environment}"
-  description = "Security group para Lambda acessar RDS"
-  vpc_id      = aws_vpc.main.id
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name        = "lambda-${var.environment}"
-    Environment = var.environment
-    Phase       = "3"
-  }
-}
-
-# Permitir Lambda acessar RDS
-resource "aws_security_group_rule" "rds_from_lambda" {
-  type                     = "ingress"
-  from_port                = 3306
-  to_port                  = 3306
-  protocol                 = "tcp"
-  source_security_group_id = aws_security_group.lambda.id
-  security_group_id        = aws_security_group.rds.id
-}
-
-# ─────────────────────────────────────────
 # DB Subnet Group — para RDS em subnets privadas
 # ─────────────────────────────────────────
 resource "aws_db_subnet_group" "main" {
@@ -393,88 +361,10 @@ resource "aws_secretsmanager_secret_version" "db_credentials" {
 }
 
 # ─────────────────────────────────────────
-# Archive File — Cria o ZIP automaticamente
-# ─────────────────────────────────────────
-data "archive_file" "lambda_zip" {
-  type        = "zip"
-  source_file = "${path.module}/lambda_index.py"
-  output_path = "${path.module}/lambda_function_generated.zip"
-}
-
-# ─────────────────────────────────────────
 # Usar IAM Profile existente do Lab
 # ─────────────────────────────────────────
-data "aws_iam_role" "lab_role" {
-  name = "LabRole"
-}
-
 data "aws_iam_instance_profile" "lab_profile" {
   name = "LabInstanceProfile"
-}
-
-# ─────────────────────────────────────────
-# Lambda Function — Usa LabRole existente
-# ─────────────────────────────────────────
-resource "aws_lambda_function" "db_init" {
-  filename         = "${path.module}/lambda_function_manual.zip"
-  source_code_hash = filebase64sha256("${path.module}/lambda_function_manual.zip")
-  function_name    = "db-init-${var.environment}"
-  role             = data.aws_iam_role.lab_role.arn
-  handler          = "lambda_index.handler"
-  runtime          = "python3.11"
-  timeout          = 60
-
-  vpc_config {
-    subnet_ids         = [aws_subnet.private_az1.id]
-    security_group_ids = [aws_security_group.lambda.id]
-  }
-
-  environment {
-    variables = {
-      SECRET_NAME = aws_secretsmanager_secret.db_credentials.name
-      REGION      = var.aws_region
-    }
-  }
-
-  tags = {
-    Environment = var.environment
-    Phase       = "3"
-  }
-
-  depends_on = [aws_db_instance.mysql]
-}
-
-# ─────────────────────────────────────────
-# Lambda Invocation (executa após RDS criado)
-# ─────────────────────────────────────────
-resource "aws_lambda_invocation" "db_init_invoke" {
-  function_name = aws_lambda_function.db_init.function_name
-
-  input = jsonencode({
-    action = "init_db"
-  })
-
-  depends_on = [
-    aws_db_instance.mysql,
-    aws_secretsmanager_secret_version.db_credentials
-  ]
-}
-
-# ─────────────────────────────────────────
-# Cloud9 Environment
-# ─────────────────────────────────────────
-resource "aws_cloud9_environment_ec2" "main" {
-  name                        = "nodeapp-env-${var.environment}"
-  description                 = "Cloud9 environment para Node.js app"
-  instance_type               = "t3.micro"
-  image_id                    = "ubuntu-22.04-x86_64"
-  subnet_id                   = aws_subnet.public.id
-  automatic_stop_time_minutes = 30
-
-  tags = {
-    Environment = var.environment
-    Phase       = "3"
-  }
 }
 
 # ─────────────────────────────────────────
@@ -487,13 +377,13 @@ resource "aws_instance" "app" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.ec2.id]
   key_name               = var.key_name != "" ? var.key_name : null
-  iam_instance_profile   = data.aws_iam_instance_profile.lab_profile.name  
+  iam_instance_profile   = data.aws_iam_instance_profile.lab_profile.name
 
   user_data = base64encode(<<EOF
 #!/bin/bash -xe
 export DEBIAN_FRONTEND=noninteractive
 apt update -y
-apt install -y nodejs unzip wget npm curl jq awscli
+apt install -y nodejs unzip wget npm curl jq awscli mysql-client
 
 # Baixar e descompactar o código da aplicação
 wget https://aws-tc-largeobjects.s3.us-west-2.amazonaws.com/CUR-TF-200-ACCAP1-1-91571/1-lab-capstone-project-1/code.zip -P /home/ubuntu
@@ -560,7 +450,7 @@ EOF
     ManagedBy   = "Terraform"
   }
 
-  depends_on = [aws_lambda_invocation.db_init_invoke]
+  depends_on = [aws_secretsmanager_secret_version.db_credentials]
 
   lifecycle {
     create_before_destroy = true
@@ -603,16 +493,6 @@ output "rds_port" {
 output "secret_name" {
   description = "Nome da secret no Secrets Manager"
   value       = aws_secretsmanager_secret.db_credentials.name
-}
-
-output "cloud9_environment_id" {
-  description = "ID do Cloud9 environment"
-  value       = aws_cloud9_environment_ec2.main.id
-}
-
-output "lambda_function_name" {
-  description = "Nome da função Lambda para inicializar DB"
-  value       = aws_lambda_function.db_init.function_name
 }
 
 output "vpc_id" {
