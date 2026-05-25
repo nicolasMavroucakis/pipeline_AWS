@@ -18,7 +18,7 @@ variable "instance_type" {
 }
 
 variable "ami_id" {
-  description = "AMI Ubuntu — us-east-1: ami-0fc5d935ebf8bc3bc"
+  description = "AMI Ubuntu 22.04 LTS"
   type        = string
 }
 
@@ -60,11 +60,12 @@ resource "aws_vpc" "main" {
   tags = {
     Name        = "vpc-${var.environment}"
     Environment = var.environment
+    Phase       = "2"
   }
 }
 
 # ─────────────────────────────────────────
-# Subnet pública (AZ-1)
+# Subnet Pública (AZ-1)
 # ─────────────────────────────────────────
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
@@ -75,6 +76,7 @@ resource "aws_subnet" "public" {
   tags = {
     Name        = "subnet-public-${var.environment}"
     Environment = var.environment
+    Phase       = "2"
   }
 }
 
@@ -87,11 +89,12 @@ resource "aws_internet_gateway" "igw" {
   tags = {
     Name        = "igw-${var.environment}"
     Environment = var.environment
+    Phase       = "2"
   }
 }
 
 # ─────────────────────────────────────────
-# Route Table — subnet pública → IGW
+# Route Table — Subnet Pública → IGW
 # ─────────────────────────────────────────
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
@@ -104,6 +107,7 @@ resource "aws_route_table" "public" {
   tags = {
     Name        = "rt-public-${var.environment}"
     Environment = var.environment
+    Phase       = "2"
   }
 }
 
@@ -114,14 +118,16 @@ resource "aws_route_table_association" "public" {
 
 # ─────────────────────────────────────────
 # Security Group — EC2
-# Porta 80: app roda na 80 conforme o script do lab (APP_PORT=80)
-# Porta 22: SSH para debug
+# Porta 80: HTTP (aplicação web)
+# Porta 22: SSH (acesso remoto)
+# Porta 3306: MySQL (local, acessível de dentro da VPC)
 # ─────────────────────────────────────────
 resource "aws_security_group" "ec2" {
-  name        = "ec2-${var.environment}"
-  description = "Security group da EC2 - fase 2"
+  name        = "sg-ec2-${var.environment}"
+  description = "Security group da EC2 - fase 2 (app + MySQL local)"
   vpc_id      = aws_vpc.main.id
 
+  # HTTP — aplicação web
   ingress {
     description = "HTTP"
     from_port   = 80
@@ -130,6 +136,7 @@ resource "aws_security_group" "ec2" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # SSH — acesso remoto
   ingress {
     description = "SSH"
     from_port   = 22
@@ -138,6 +145,16 @@ resource "aws_security_group" "ec2" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # MySQL — acesso local (opcional, apenas para debug)
+  ingress {
+    description = "MySQL local"
+    from_port   = 3306
+    to_port     = 3306
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]  # Apenas de dentro da VPC
+  }
+
+  # Egress — permitir tudo
   egress {
     from_port   = 0
     to_port     = 0
@@ -146,14 +163,15 @@ resource "aws_security_group" "ec2" {
   }
 
   tags = {
-    Name        = "ec2-${var.environment}"
+    Name        = "sg-ec2-${var.environment}"
     Environment = var.environment
+    Phase       = "2"
   }
 }
 
 # ─────────────────────────────────────────
-# EC2 — Ubuntu com app + banco local
-# Script oficial do lab (UserdataScript-phase-2.sh)
+# EC2 — Ubuntu com app + MySQL local
+# Script oficial do AWS Academy (UserdataScript-phase-2.sh)
 # ─────────────────────────────────────────
 resource "aws_instance" "app" {
   ami                    = var.ami_id
@@ -162,39 +180,73 @@ resource "aws_instance" "app" {
   vpc_security_group_ids = [aws_security_group.ec2.id]
   key_name               = var.key_name != "" ? var.key_name : null
 
-  user_data = <<EOF
+  # Script de inicialização — instala app + MySQL + credenciais
+  user_data = base64encode(<<EOF
 #!/bin/bash -xe
+export DEBIAN_FRONTEND=noninteractive
 apt update -y
-apt install nodejs unzip wget npm mysql-server -y
+apt install -y nodejs unzip wget npm mysql-server curl jq
+
+# Baixar e descompactar o código da aplicação
 wget https://aws-tc-largeobjects.s3.us-west-2.amazonaws.com/CUR-TF-200-ACCAP1-1-91571/1-lab-capstone-project-1/code.zip -P /home/ubuntu
 cd /home/ubuntu
 unzip code.zip -x "resources/codebase_partner/node_modules/*"
 cd resources/codebase_partner
 npm install aws aws-sdk
-mysql -u root -e "CREATE USER 'nodeapp' IDENTIFIED WITH mysql_native_password BY 'student12'"
+
+# Criar usuário e banco de dados do MySQL
+mysql -u root -e "CREATE USER 'nodeapp' IDENTIFIED WITH mysql_native_password BY 'student12';"
 mysql -u root -e "GRANT all privileges on *.* to 'nodeapp'@'%';"
 mysql -u root -e "CREATE DATABASE STUDENTS;"
 mysql -u root -e "USE STUDENTS; CREATE TABLE students(id INT NOT NULL AUTO_INCREMENT, name VARCHAR(255) NOT NULL, address VARCHAR(255) NOT NULL, city VARCHAR(255) NOT NULL, state VARCHAR(255) NOT NULL, email VARCHAR(255) NOT NULL, phone VARCHAR(100) NOT NULL, PRIMARY KEY (id));"
+
+# Configurar MySQL para aceitar conexões remotas
 sed -i 's/.*bind-address.*/bind-address = 0.0.0.0/' /etc/mysql/mysql.conf.d/mysqld.cnf
 systemctl enable mysql
 service mysql restart
-export APP_DB_HOST=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)
+
+# Obter IP privado da instância
+PRIVATE_IP=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)
+
+# Definir variáveis de ambiente
+export APP_DB_HOST=$PRIVATE_IP
 export APP_DB_USER=nodeapp
 export APP_DB_PASSWORD=student12
 export APP_DB_NAME=STUDENTS
 export APP_PORT=80
+
+# Persistir variáveis de ambiente
+cat > /etc/environment << ENVEOF
+APP_DB_HOST=$PRIVATE_IP
+APP_DB_USER=nodeapp
+APP_DB_PASSWORD=student12
+APP_DB_NAME=STUDENTS
+APP_PORT=80
+ENVEOF
+
+# Iniciar a aplicação em background
 npm start &
-echo '#!/bin/bash -xe
+
+# Criar script de restart automático
+cat > /etc/rc.local << RCEOF
+#!/bin/bash -xe
+source /etc/environment
 cd /home/ubuntu/resources/codebase_partner
-export APP_PORT=80
-npm start' > /etc/rc.local
+npm start
+RCEOF
 chmod +x /etc/rc.local
 EOF
+  )
 
   tags = {
     Name        = "ec2-app-${var.environment}"
     Environment = var.environment
+    Phase       = "2"
     ManagedBy   = "Terraform"
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -202,7 +254,7 @@ EOF
 # Outputs
 # ─────────────────────────────────────────
 output "ec2_public_ip" {
-  description = "IP público da EC2"
+  description = "IP público da EC2 — use para acessar a aplicação"
   value       = aws_instance.app.public_ip
 }
 
@@ -212,6 +264,26 @@ output "ec2_public_dns" {
 }
 
 output "app_url" {
-  description = "URL da aplicação — acesse no browser"
+  description = "URL da aplicação — abra no browser"
   value       = "http://${aws_instance.app.public_ip}"
+}
+
+output "vpc_id" {
+  description = "ID da VPC"
+  value       = aws_vpc.main.id
+}
+
+output "subnet_public_id" {
+  description = "ID da subnet pública"
+  value       = aws_subnet.public.id
+}
+
+output "security_group_id" {
+  description = "ID do Security Group da EC2"
+  value       = aws_security_group.ec2.id
+}
+
+output "ec2_instance_id" {
+  description = "ID da instância EC2"
+  value       = aws_instance.app.id
 }
