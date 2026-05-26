@@ -488,66 +488,10 @@ resource "aws_security_group" "lambda" {
 }
 
 # ─────────────────────────────────────────
-# IAM Role para Lambda
+# Usar IAM Role existente do Lab para Lambda
 # ─────────────────────────────────────────
-resource "aws_iam_role" "lambda_role" {
-  name = "lambda-db-init-role-${var.environment}"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "lambda.amazonaws.com"
-      }
-    }]
-  })
-
-  tags = {
-    Name        = "lambda-db-init-role-${var.environment}"
-    Environment = var.environment
-    Phase       = "3"
-  }
-}
-
-# ─────────────────────────────────────────
-# IAM Policy — Lambda (Secrets Manager + VPC)
-# ─────────────────────────────────────────
-resource "aws_iam_role_policy" "lambda_policy" {
-  name = "lambda-db-init-policy-${var.environment}"
-  role = aws_iam_role.lambda_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue"
-        ]
-        Resource = aws_secretsmanager_secret.db_credentials.arn
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ec2:CreateNetworkInterface",
-          "ec2:DescribeNetworkInterfaces",
-          "ec2:DeleteNetworkInterface"
-        ]
-        Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:aws:logs:*:*:*"
-      }
-    ]
-  })
+data "aws_iam_role" "lambda_role" {
+  name = "LabRole"
 }
 
 
@@ -557,7 +501,7 @@ resource "aws_iam_role_policy" "lambda_policy" {
 resource "aws_lambda_function" "db_init" {
   filename      = "lambda_function_manual.zip"
   function_name = "db-init-${var.environment}"
-  role          = aws_iam_role.lambda_role.arn
+  role          = data.aws_iam_role.lambda_role.arn
   handler       = "lambda_index.handler"
   runtime       = "python3.11"
   timeout       = 60
