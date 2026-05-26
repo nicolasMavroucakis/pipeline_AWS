@@ -415,9 +415,9 @@ SECRET=$(aws secretsmanager get-secret-value \
 
 # Extrair credenciais
 export APP_DB_HOST=$(echo $SECRET | jq -r '.host' | cut -d: -f1)
-export APP_DB_USER=$(echo $SECRET | jq -r '.username')
+export APP_DB_USER=$(echo $SECRET | jq -r '.user')        # mudou de .username para .user
 export APP_DB_PASSWORD=$(echo $SECRET | jq -r '.password')
-export APP_DB_NAME=$(echo $SECRET | jq -r '.dbname')
+export APP_DB_NAME=$(echo $SECRET | jq -r '.db')           # mudou de .dbname para .db
 export APP_PORT=80
 
 
@@ -453,7 +453,7 @@ EOF
   )
 
   tags = {
-    Name        = "ec2-app-${var.environment}-2"
+    Name        = "ec2-app-${var.environment}-3"
     Environment = var.environment
     Phase       = "3"
     ManagedBy   = "Terraform"
@@ -521,7 +521,7 @@ resource "aws_lambda_function" "db_init" {
   }
 
   tags = {
-    Name        = "db-init-${var.environment}"
+    Name        = "db-init-${var.environment}-2"
     Environment = var.environment
     Phase       = "3"
   }
