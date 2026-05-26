@@ -420,6 +420,7 @@ export APP_DB_PASSWORD=$(echo $SECRET | jq -r '.password')
 export APP_DB_NAME=$(echo $SECRET | jq -r '.dbname')
 export APP_PORT=80
 
+
 # Iniciar a aplicação
 cd /home/ubuntu/resources/codebase_partner
 npm start
