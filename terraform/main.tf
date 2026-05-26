@@ -499,12 +499,13 @@ data "aws_iam_role" "lambda_role" {
 # Lambda Function — Inicializa banco de dados
 # ─────────────────────────────────────────
 resource "aws_lambda_function" "db_init" {
-  filename      = "lambda_function_manual.zip"
-  function_name = "db-init-${var.environment}"
-  role          = data.aws_iam_role.lambda_role.arn
-  handler       = "lambda_index.handler"
-  runtime       = "python3.11"
-  timeout       = 60
+  filename            = "lambda_function_manual.zip"
+  source_code_hash    = filebase64sha256("lambda_function_manual.zip")
+  function_name       = "db-init-${var.environment}"
+  role                = data.aws_iam_role.lambda_role.arn
+  handler             = "lambda_index.handler"
+  runtime             = "python3.11"
+  timeout             = 60
 
   vpc_config {
     subnet_ids         = [aws_subnet.private_az1.id, aws_subnet.private_az2.id]
