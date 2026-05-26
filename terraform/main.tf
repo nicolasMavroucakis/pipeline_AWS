@@ -275,6 +275,14 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_security_group.ec2.id]
   }
 
+  ingress {
+    description     = "MySQL from Lambda"
+    from_port       = 3306
+    to_port         = 3306
+    protocol        = "tcp"
+    security_groups = [aws_security_group.lambda.id]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -455,6 +463,139 @@ EOF
   lifecycle {
     create_before_destroy = true
   }
+}
+
+# ─────────────────────────────────────────
+# Security Group — Lambda 
+# ─────────────────────────────────────────
+resource "aws_security_group" "lambda" {
+  name        = "lambda-${var.environment}-3"
+  description = "Security group da Lambda - fase 3"
+  vpc_id      = aws_vpc.main.id
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "lambda-${var.environment}"
+    Environment = var.environment
+    Phase       = "3"
+  }
+}
+
+# ─────────────────────────────────────────
+# IAM Role para Lambda
+# ─────────────────────────────────────────
+resource "aws_iam_role" "lambda_role" {
+  name = "lambda-db-init-role-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "lambda.amazonaws.com"
+      }
+    }]
+  })
+
+  tags = {
+    Name        = "lambda-db-init-role-${var.environment}"
+    Environment = var.environment
+    Phase       = "3"
+  }
+}
+
+# ─────────────────────────────────────────
+# IAM Policy — Lambda (Secrets Manager + VPC)
+# ─────────────────────────────────────────
+resource "aws_iam_role_policy" "lambda_policy" {
+  name = "lambda-db-init-policy-${var.environment}"
+  role = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue"
+        ]
+        Resource = aws_secretsmanager_secret.db_credentials.arn
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateNetworkInterface",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DeleteNetworkInterface"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
+}
+
+# ─────────────────────────────────────────
+# Lambda Function — Inicializa banco de dados
+# ─────────────────────────────────────────
+resource "aws_lambda_function" "db_init" {
+  filename      = "lambda_function_manual.zip"
+  function_name = "db-init-${var.environment}"
+  role          = aws_iam_role.lambda_role.arn
+  handler       = "lambda_index.handler"
+  runtime       = "python3.11"
+  timeout       = 60
+
+  vpc_config {
+    subnet_ids         = [aws_subnet.private_az1.id, aws_subnet.private_az2.id]
+    security_group_ids = [aws_security_group.lambda.id]
+  }
+
+  environment {
+    variables = {
+      SECRET_NAME = aws_secretsmanager_secret.db_credentials.name
+      REGION      = var.aws_region
+    }
+  }
+
+  tags = {
+    Name        = "db-init-${var.environment}"
+    Environment = var.environment
+    Phase       = "3"
+  }
+
+  depends_on = [aws_secretsmanager_secret_version.db_credentials]
+}
+
+# ─────────────────────────────────────────
+# Invocação automática da Lambda
+# ─────────────────────────────────────────
+resource "aws_lambda_invocation" "db_init" {
+  function_name = aws_lambda_function.db_init.function_name
+
+  input = jsonencode({
+    action = "initialize_db"
+  })
+
+  depends_on = [
+    aws_db_instance.mysql,
+    aws_secretsmanager_secret_version.db_credentials
+  ]
 }
 
 # ─────────────────────────────────────────
