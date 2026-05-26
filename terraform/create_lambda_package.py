@@ -8,17 +8,17 @@ import sys
 if os.path.exists('lambda_build'):
     shutil.rmtree('lambda_build')
 
-# Criar estrutura
-os.makedirs('lambda_build/python/lib/python3.11/site-packages', exist_ok=True)
+# Criar estrutura na raiz (não em site-packages)
+os.makedirs('lambda_build', exist_ok=True)
 
-# Instalar dependências
+# Instalar dependências diretamente na raiz
 subprocess.run([
     sys.executable, '-m', 'pip', 'install', 
     'pymysql',
-    '-t', 'lambda_build/python/lib/python3.11/site-packages/'
+    '-t', 'lambda_build/'
 ], check=True)
 
-# Copiar lambda_index.py
+# Copiar lambda_index.py para a raiz
 shutil.copy('lambda_index.py', 'lambda_build/')
 
 # Criar ZIP
@@ -33,6 +33,10 @@ with zipfile.ZipFile('lambda_function_manual.zip', 'w', zipfile.ZIP_DEFLATED) as
             z.write(file_path, arcname)
 
 print("Lambda package created: lambda_function_manual.zip")
+print("Contents:")
+with zipfile.ZipFile('lambda_function_manual.zip', 'r') as z:
+    for name in z.namelist():
+        print(f"  - {name}")
 
 # Limpar
 shutil.rmtree('lambda_build')
