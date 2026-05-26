@@ -14,9 +14,9 @@ def handler(event, context):
         # Conectar ao RDS
         connection = pymysql.connect(
             host=creds['host'].split(':')[0],
-            user=creds['username'],
+            user=creds['user'],
             password=creds['password'],
-            database=creds['dbname']
+            database=creds['db']
         )
         
         cursor = connection.cursor()
