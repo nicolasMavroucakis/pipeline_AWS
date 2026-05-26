@@ -359,13 +359,13 @@ resource "aws_secretsmanager_secret" "db_credentials" {
 resource "aws_secretsmanager_secret_version" "db_credentials" {
   secret_id = aws_secretsmanager_secret.db_credentials.id
   secret_string = jsonencode({
-    username = var.db_master_username
-    password = var.db_master_password
-    engine   = "mysql"
-    host     = aws_db_instance.mysql.endpoint
-    port     = 3306
-    dbname   = "STUDENTS"
-  })
+  user     = var.db_master_username
+  password = var.db_master_password
+  engine   = "mysql"
+  host     = aws_db_instance.mysql.endpoint
+  port     = 3306
+  db       = "STUDENTS"
+})
 }
 
 # ─────────────────────────────────────────
