@@ -220,11 +220,9 @@ resource "aws_route_table_association" "private_az2" {
 
 # ─────────────────────────────────────────
 # Security Group — EC2 (apenas app Node.js)
-# Porta 80: HTTP (aplicação web)
-# Porta 22: SSH (acesso remoto)
 # ─────────────────────────────────────────
 resource "aws_security_group" "ec2" {
-  name        = "ec2-${var.environment}-3"
+  name        = "ec2-${var.environment}-v4"
   description = "Security group da EC2 - fase 3 (apenas app Node.js)"
   vpc_id      = aws_vpc.main.id
 
@@ -252,7 +250,7 @@ resource "aws_security_group" "ec2" {
   }
 
   tags = {
-    Name        = "ec2-${var.environment}"
+    Name        = "ec2-${var.environment}-v4"
     Environment = var.environment
     Phase       = "3"
   }
@@ -260,10 +258,9 @@ resource "aws_security_group" "ec2" {
 
 # ─────────────────────────────────────────
 # Security Group — RDS (MySQL)
-# Acessa apenas da EC2
 # ─────────────────────────────────────────
 resource "aws_security_group" "rds" {
-  name        = "rds-${var.environment}-3"
+  name        = "rds-${var.environment}-v4"
   description = "Security group do RDS - fase 3 (MySQL)"
   vpc_id      = aws_vpc.main.id
 
@@ -291,7 +288,7 @@ resource "aws_security_group" "rds" {
   }
 
   tags = {
-    Name        = "rds-${var.environment}"
+    Name        = "rds-${var.environment}-v4"
     Environment = var.environment
     Phase       = "3"
   }
@@ -301,21 +298,21 @@ resource "aws_security_group" "rds" {
 # DB Subnet Group — para RDS em subnets privadas
 # ─────────────────────────────────────────
 resource "aws_db_subnet_group" "main" {
-  name       = "db-subnet-group-${var.environment}"
+  name       = "db-subnet-group-${var.environment}-v4"
   subnet_ids = [aws_subnet.private_az1.id, aws_subnet.private_az2.id]
 
   tags = {
-    Name        = "db-subnet-group-${var.environment}"
+    Name        = "db-subnet-group-${var.environment}-v4"
     Environment = var.environment
     Phase       = "3"
   }
 }
 
 # ─────────────────────────────────────────
-# RDS MySQL Instance
+# RDS MySQL Instance (Identificador alterado para forçar run limpo)
 # ─────────────────────────────────────────
 resource "aws_db_instance" "mysql" {
-  identifier            = "mysql-${var.environment}"
+  identifier            = "mysql-${var.environment}-v4" # 🔥 Novo identificador de instância
   engine                = "mysql"
   engine_version        = "8.0"
   instance_class        = "db.t3.micro"
@@ -335,22 +332,22 @@ resource "aws_db_instance" "mysql" {
   skip_final_snapshot    = true
 
   tags = {
-    Name        = "mysql-${var.environment}"
+    Name        = "mysql-${var.environment}-v4"
     Environment = var.environment
     Phase       = "3"
   }
 }
 
 # ─────────────────────────────────────────
-# AWS Secrets Manager — Credenciais do RDS
+# AWS Secrets Manager — Credenciais do RDS (Nome alterado para v4)
 # ─────────────────────────────────────────
 resource "aws_secretsmanager_secret" "db_credentials" {
-  name                    = "rds/${var.environment}/db-credentials"
-  description             = "Credenciais do banco de dados RDS"
-  recovery_window_in_days = 7
+  name                    = "Mydbsecret-v4" # 🔥 Novo Nome físico do Secret
+  description             = "Credenciais do banco de dados RDS - v4"
+  recovery_window_in_days = 0 # Garante deleção imediata se for limpo depois
 
   tags = {
-    Name        = "db-credentials-${var.environment}"
+    Name        = "db-credentials-${var.environment}-v4"
     Environment = var.environment
     Phase       = "3"
   }
@@ -359,15 +356,11 @@ resource "aws_secretsmanager_secret" "db_credentials" {
 resource "aws_secretsmanager_secret_version" "db_credentials" {
   secret_id = aws_secretsmanager_secret.db_credentials.id
   secret_string = jsonencode({
-    # Para o Node.js:
+    # Chaves mapeadas em formato duplo (Garante compatibilidade Node.js + Lambda Python)
     user     = var.db_master_username
     db       = "STUDENTS"
-    
-    # Para a Lambda (Python):
     username = var.db_master_username
     dbname   = "STUDENTS"
-    
-    # Comuns a ambos:
     password = var.db_master_password
     engine   = "mysql"
     host     = aws_db_instance.mysql.endpoint
@@ -384,7 +377,6 @@ data "aws_iam_instance_profile" "lab_profile" {
 
 # ─────────────────────────────────────────
 # EC2 — Ubuntu com aplicação Node.js
-# Conecta ao RDS via Secrets Manager
 # ─────────────────────────────────────────
 resource "aws_instance" "app" {
   ami                    = var.ami_id
@@ -410,7 +402,7 @@ npm install aws aws-sdk
 # Script para obter credenciais do Secrets Manager e iniciar a app
 cat > /home/ubuntu/start-app.sh << 'STARTEOF'
 #!/bin/bash
-SECRET_NAME="rds/${var.environment}/db-credentials"
+SECRET_NAME="Mydbsecret-v4" # 🔥 Apontando para o segredo novo
 REGION="${var.aws_region}"
 
 # Obter secret do Secrets Manager
@@ -420,13 +412,12 @@ SECRET=$(aws secretsmanager get-secret-value \
   --query 'SecretString' \
   --output text)
 
-# Extrair credenciais
+# Extrair credenciais utilizando as novas chaves mapeadas síncronas (.user e .db)
 export APP_DB_HOST=$(echo $SECRET | jq -r '.host' | cut -d: -f1)
-export APP_DB_USER=$(echo $SECRET | jq -r '.user')        # mudou de .username para .user
+export APP_DB_USER=$(echo $SECRET | jq -r '.user')        
 export APP_DB_PASSWORD=$(echo $SECRET | jq -r '.password')
-export APP_DB_NAME=$(echo $SECRET | jq -r '.db')           # mudou de .dbname para .db
+export APP_DB_NAME=$(echo $SECRET | jq -r '.db')           
 export APP_PORT=80
-
 
 # Iniciar a aplicação
 cd /home/ubuntu/resources/codebase_partner
@@ -460,7 +451,7 @@ EOF
   )
 
   tags = {
-    Name        = "ec2-app-${var.environment}-3"
+    Name        = "ec2-app-${var.environment}-v4" # 🔥 Identificação visual nova
     Environment = var.environment
     Phase       = "3"
     ManagedBy   = "Terraform"
@@ -477,8 +468,8 @@ EOF
 # Security Group — Lambda 
 # ─────────────────────────────────────────
 resource "aws_security_group" "lambda" {
-  name        = "lambda-${var.environment}-3"
-  description = "Security group da Lambda - fase 3"
+  name        = "lambda-${var.environment}-v4"
+  description = "Security group da Lambda - fase 3 (v4)"
   vpc_id      = aws_vpc.main.id
 
   egress {
@@ -489,7 +480,7 @@ resource "aws_security_group" "lambda" {
   }
 
   tags = {
-    Name        = "lambda-${var.environment}"
+    Name        = "lambda-${var.environment}-v4"
     Environment = var.environment
     Phase       = "3"
   }
@@ -502,14 +493,13 @@ data "aws_iam_role" "lambda_role" {
   name = "LabRole"
 }
 
-
 # ─────────────────────────────────────────
-# Lambda Function — Inicializa banco de dados
+# Lambda Function — Inicializa banco de dados (Nome alterado para v4)
 # ─────────────────────────────────────────
 resource "aws_lambda_function" "db_init" {
   filename            = "lambda_function_manual.zip"
   source_code_hash    = filebase64sha256("lambda_function_manual.zip")
-  function_name       = "db-init-${var.environment}"
+  function_name       = "db-init-${var.environment}-v4" # 🔥 Nova função Lambda
   role                = data.aws_iam_role.lambda_role.arn
   handler             = "lambda_index.handler"
   runtime             = "python3.11"
@@ -528,7 +518,7 @@ resource "aws_lambda_function" "db_init" {
   }
 
   tags = {
-    Name        = "db-init-${var.environment}-2"
+    Name        = "db-init-${var.environment}-v4"
     Environment = var.environment
     Phase       = "3"
   }
@@ -537,14 +527,14 @@ resource "aws_lambda_function" "db_init" {
 }
 
 # ─────────────────────────────────────────
-# Invocação automática da Lambda
+# Invocação automática da Lambda (Com timestamp para forçar execução)
 # ─────────────────────────────────────────
 resource "aws_lambda_invocation" "db_init" {
   function_name = aws_lambda_function.db_init.function_name
 
   input = jsonencode({
     action    = "initialize_db"
-    timestamp = timestamp() # 💡 Força o re-run neste apply com um input novo
+    timestamp = timestamp() # 🔥 Garante que vai rodar imediatamente neste apply
   })
 
   depends_on = [
