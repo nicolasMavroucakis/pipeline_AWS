@@ -359,13 +359,20 @@ resource "aws_secretsmanager_secret" "db_credentials" {
 resource "aws_secretsmanager_secret_version" "db_credentials" {
   secret_id = aws_secretsmanager_secret.db_credentials.id
   secret_string = jsonencode({
-  user     = var.db_master_username
-  password = var.db_master_password
-  engine   = "mysql"
-  host     = aws_db_instance.mysql.endpoint
-  port     = 3306
-  db       = "STUDENTS"
-})
+    # Para o Node.js:
+    user     = var.db_master_username
+    db       = "STUDENTS"
+    
+    # Para a Lambda (Python):
+    username = var.db_master_username
+    dbname   = "STUDENTS"
+    
+    # Comuns a ambos:
+    password = var.db_master_password
+    engine   = "mysql"
+    host     = aws_db_instance.mysql.endpoint
+    port     = 3306
+  })
 }
 
 # ─────────────────────────────────────────
@@ -536,7 +543,8 @@ resource "aws_lambda_invocation" "db_init" {
   function_name = aws_lambda_function.db_init.function_name
 
   input = jsonencode({
-    action = "initialize_db"
+    action    = "initialize_db"
+    timestamp = timestamp() # 💡 Força o re-run neste apply com um input novo
   })
 
   depends_on = [
