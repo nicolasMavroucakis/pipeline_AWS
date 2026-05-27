@@ -53,7 +53,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "awsimt2026nicolasgustavo"
+    bucket = "awsimt20262nicolasgustavo"
     region = "us-east-1"
   }
 }
