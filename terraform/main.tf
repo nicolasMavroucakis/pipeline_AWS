@@ -399,24 +399,24 @@ unzip code.zip -x "resources/codebase_partner/node_modules/*"
 cd resources/codebase_partner
 npm install aws aws-sdk
 
-# Script para obter credenciais do Secrets Manager e iniciar a app
-cat > /home/ubuntu/start-app.sh << 'STARTEOF'
+# Opção 2: Sem aspas em STARTEOF para permitir a interpolação da região pelo Terraform
+cat > /home/ubuntu/start-app.sh << STARTEOF
 #!/bin/bash
 SECRET_NAME="Mydbsecret-v4"
-REGION="${var.aws_region}"
+REGION="${var.aws_region}" # Aqui o Terraform injeta a região correta (ex: us-east-1)
 
-# Obter secret do Secrets Manager
-SECRET=$(aws secretsmanager get-secret-value \
-  --secret-id "$SECRET_NAME" \
-  --region "$REGION" \
+# Obter secret do Secrets Manager (Escape com \ para variáveis do Linux)
+SECRET=\$(aws secretsmanager get-secret-value \
+  --secret-id "\$SECRET_NAME" \
+  --region "\$REGION" \
   --query 'SecretString' \
   --output text)
 
 # Extrair credenciais utilizando as novas chaves mapeadas (.user e .db)
-export APP_DB_HOST=$(echo $SECRET | jq -r '.host' | cut -d: -f1)
-export APP_DB_USER=$(echo $SECRET | jq -r '.user')        
-export APP_DB_PASSWORD=$(echo $SECRET | jq -r '.password')
-export APP_DB_NAME=$(echo $SECRET | jq -r '.db')           
+export APP_DB_HOST=\$(echo \$SECRET | jq -r '.host' | cut -d: -f1)
+export APP_DB_USER=\$(echo \$SECRET | jq -r '.user')        
+export APP_DB_PASSWORD=\$(echo \$SECRET | jq -r '.password')
+export APP_DB_NAME=\$(echo \$SECRET | jq -r '.db')           
 export APP_PORT=80
 
 # Iniciar a aplicação
