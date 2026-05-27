@@ -257,7 +257,7 @@ resource "aws_security_group" "ec2" {
 }
 
 # ─────────────────────────────────────────
-# Security Group — RDS (Versão v4)
+# Security Group — RDS (Versão v4 para evitar conflito)
 # ─────────────────────────────────────────
 resource "aws_security_group" "rds" {
   name        = "rds-${var.environment}-v4"
@@ -295,24 +295,24 @@ resource "aws_security_group" "rds" {
 }
 
 # ─────────────────────────────────────────
-# DB Subnet Group — RDS (Mantido original)
+# DB Subnet Group — RDS (Nome alterado para v4)
 # ─────────────────────────────────────────
 resource "aws_db_subnet_group" "main" {
-  name       = "db-subnet-group-${var.environment}"
+  name       = "db-subnet-group-${var.environment}-v4"
   subnet_ids = [aws_subnet.private_az1.id, aws_subnet.private_az2.id]
 
   tags = {
-    Name        = "db-subnet-group-${var.environment}"
+    Name        = "db-subnet-group-${var.environment}-v4"
     Environment = var.environment
     Phase       = "3"
   }
 }
 
 # ─────────────────────────────────────────
-# RDS MySQL Instance (MANTIDO 100% ORIGINAL SEM -v4)
+# RDS MySQL Instance (Identificador original mantido estável)
 # ─────────────────────────────────────────
 resource "aws_db_instance" "mysql" {
-  identifier            = "mysql-${var.environment}" # Voltou para o nome original estável
+  identifier            = "mysql-${var.environment}" 
   engine                = "mysql"
   engine_version        = "8.0"
   instance_class        = "db.t3.micro"
@@ -327,7 +327,7 @@ resource "aws_db_instance" "mysql" {
   db_subnet_group_name   = aws_db_subnet_group.main.name
   vpc_security_group_ids = [aws_security_group.rds.id]
 
-  multi_az               = true # Mantido como true original
+  multi_az               = true 
   publicly_accessible    = false
   skip_final_snapshot    = true
 
@@ -356,6 +356,7 @@ resource "aws_secretsmanager_secret" "db_credentials" {
 resource "aws_secretsmanager_secret_version" "db_credentials" {
   secret_id = aws_secretsmanager_secret.db_credentials.id
   secret_string = jsonencode({
+    # Chaves em formato duplo (Compatibilidade Node.js + Lambda Python)
     user     = var.db_master_username
     db       = "STUDENTS"
     username = var.db_master_username
@@ -526,7 +527,7 @@ resource "aws_lambda_function" "db_init" {
 }
 
 # ─────────────────────────────────────────
-# Invocação automática da Lambda (Garante re-run no banco existente)
+# Invocação automática da Lambda (Garante execução instantânea)
 # ─────────────────────────────────────────
 resource "aws_lambda_invocation" "db_init" {
   function_name = aws_lambda_function.db_init.function_name
