@@ -376,7 +376,7 @@ data "aws_iam_instance_profile" "lab_profile" {
 }
 
 # ─────────────────────────────────────────
-# EC2 — Ubuntu com aplicação Node.js (Versão v4 - Direta sem Secrets Manager)
+# EC2 — Ubuntu com aplicação Node.js (Versão v4 - Direta sem travar no NPM)
 # ─────────────────────────────────────────
 resource "aws_instance" "app" {
   ami                    = var.ami_id
@@ -399,20 +399,20 @@ unzip code.zip -x "resources/codebase_partner/node_modules/*"
 cd resources/codebase_partner
 npm install aws aws-sdk
 
-# Script com injeção direta de variáveis via Terraform (Ignora bloqueio de IAM)
+# Script corrigido passando as variáveis em linha direto pro executável do Node
 cat > /home/ubuntu/start-app.sh << STARTEOF
 #!/bin/bash
-
-# Agora o Terraform vai conseguir injetar os dados reais aqui:
-export APP_DB_HOST="${split(":", aws_db_instance.mysql.endpoint)[0]}"
-export APP_DB_USER="${var.db_master_username}"        
-export APP_DB_PASSWORD="${var.db_master_password}"
-export APP_DB_NAME="STUDENTS"           
-export APP_PORT=80
-
-# Iniciar a aplicação
 cd /home/ubuntu/resources/codebase_partner
-npm start
+
+# O Terraform vai cuspir os valores exatos aqui dentro do arquivo:
+APP_DB_HOST="${split(":", aws_db_instance.mysql.endpoint)[0]}"
+APP_DB_USER="${var.db_master_username}"
+APP_DB_PASSWORD="${var.db_master_password}"
+APP_DB_NAME="STUDENTS"
+APP_PORT=80
+
+# Chamada direta ignorando o "npm start" travado do package.json
+APP_DB_HOST=\$APP_DB_HOST APP_DB_USER=\$APP_DB_USER APP_DB_PASSWORD=\$APP_DB_PASSWORD APP_DB_NAME=\$APP_DB_NAME APP_PORT=\$APP_PORT node index.js
 STARTEOF
 
 chmod +x /home/ubuntu/start-app.sh
@@ -442,19 +442,18 @@ EOF
   )
 
   tags = {
-    Name        = "ec2-app-${var.environment}-v6"
+    Name        = "ec2-app-${var.environment}-v9"
     Environment = var.environment
     Phase       = "3"
     ManagedBy   = "Terraform"
   }
 
-  depends_on = [aws_db_instance.mysql] # Garante que o banco existe para pegar o IP
+  depends_on = [aws_db_instance.mysql]
 
   lifecycle {
     create_before_destroy = true
   }
 }
-
 # ─────────────────────────────────────────
 # Security Group — Lambda (Versão v4)
 # ─────────────────────────────────────────
