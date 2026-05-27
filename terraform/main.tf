@@ -442,7 +442,7 @@ EOF
   )
 
   tags = {
-    Name        = "ec2-app-${var.environment}-v4"
+    Name        = "ec2-app-${var.environment}-v5"
     Environment = var.environment
     Phase       = "3"
     ManagedBy   = "Terraform"
