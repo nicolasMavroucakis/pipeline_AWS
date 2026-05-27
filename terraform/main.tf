@@ -376,7 +376,7 @@ data "aws_iam_instance_profile" "lab_profile" {
 }
 
 # ─────────────────────────────────────────
-# EC2 — Ubuntu com aplicação Node.js (Versão v4)
+# EC2 — Ubuntu com aplicação Node.js (Versão v4 - Direta sem Secrets Manager)
 # ─────────────────────────────────────────
 resource "aws_instance" "app" {
   ami                    = var.ami_id
@@ -399,24 +399,15 @@ unzip code.zip -x "resources/codebase_partner/node_modules/*"
 cd resources/codebase_partner
 npm install aws aws-sdk
 
-# Opção 2: Sem aspas em STARTEOF para permitir a interpolação da região pelo Terraform
-cat > /home/ubuntu/start-app.sh << STARTEOF
+# Script com injeção direta de variáveis via Terraform (Ignora bloqueio de IAM)
+cat > /home/ubuntu/start-app.sh << 'STARTEOF'
 #!/bin/bash
-SECRET_NAME="Mydbsecret-v4"
-REGION="${var.aws_region}" # Aqui o Terraform injeta a região correta (ex: us-east-1)
 
-# Obter secret do Secrets Manager (Escape com \ para variáveis do Linux)
-SECRET=\$(aws secretsmanager get-secret-value \
-  --secret-id "\$SECRET_NAME" \
-  --region "\$REGION" \
-  --query 'SecretString' \
-  --output text)
-
-# Extrair credenciais utilizando as novas chaves mapeadas (.user e .db)
-export APP_DB_HOST=\$(echo \$SECRET | jq -r '.host' | cut -d: -f1)
-export APP_DB_USER=\$(echo \$SECRET | jq -r '.user')        
-export APP_DB_PASSWORD=\$(echo \$SECRET | jq -r '.password')
-export APP_DB_NAME=\$(echo \$SECRET | jq -r '.db')           
+# O Terraform vai ler o endpoint e limpar a porta (:3306) automaticamente aqui:
+export APP_DB_HOST="${split(":", aws_db_instance.mysql.endpoint)[0]}"
+export APP_DB_USER="${var.db_master_username}"        
+export APP_DB_PASSWORD="${var.db_master_password}"
+export APP_DB_NAME="STUDENTS"           
 export APP_PORT=80
 
 # Iniciar a aplicação
@@ -457,7 +448,7 @@ EOF
     ManagedBy   = "Terraform"
   }
 
-  depends_on = [aws_secretsmanager_secret_version.db_credentials]
+  depends_on = [aws_db_instance.mysql] # Garante que o banco existe para pegar o IP
 
   lifecycle {
     create_before_destroy = true
