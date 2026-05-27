@@ -400,10 +400,10 @@ cd resources/codebase_partner
 npm install aws aws-sdk
 
 # Script com injeção direta de variáveis via Terraform (Ignora bloqueio de IAM)
-cat > /home/ubuntu/start-app.sh << 'STARTEOF'
+cat > /home/ubuntu/start-app.sh << STARTEOF
 #!/bin/bash
 
-# O Terraform vai ler o endpoint e limpar a porta (:3306) automaticamente aqui:
+# Agora o Terraform vai conseguir injetar os dados reais aqui:
 export APP_DB_HOST="${split(":", aws_db_instance.mysql.endpoint)[0]}"
 export APP_DB_USER="${var.db_master_username}"        
 export APP_DB_PASSWORD="${var.db_master_password}"
@@ -442,7 +442,7 @@ EOF
   )
 
   tags = {
-    Name        = "ec2-app-${var.environment}-v5"
+    Name        = "ec2-app-${var.environment}-v6"
     Environment = var.environment
     Phase       = "3"
     ManagedBy   = "Terraform"
