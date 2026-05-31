@@ -356,14 +356,13 @@ resource "aws_secretsmanager_secret" "db_credentials" {
 resource "aws_secretsmanager_secret_version" "db_credentials" {
   secret_id = aws_secretsmanager_secret.db_credentials.id
   secret_string = jsonencode({
-    # Chaves em formato duplo (Compatibilidade Node.js + Lambda Python)
     user     = var.db_master_username
     db       = "STUDENTS"
     username = var.db_master_username
     dbname   = "STUDENTS"
     password = var.db_master_password
     engine   = "mysql"
-    host     = aws_db_instance.mysql.endpoint
+    host     = aws_db_instance.mysql.address  # <-- AQUI ESTAVA O PROBLEMA
     port     = 3306
   })
 }
