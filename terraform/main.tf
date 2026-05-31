@@ -374,7 +374,6 @@ resource "aws_secretsmanager_secret_version" "db_credentials" {
 data "aws_iam_instance_profile" "lab_profile" {
   name = "LabInstanceProfile"
 }
-
 # ─────────────────────────────────────────
 # EC2 — Ubuntu com aplicação Node.js (Versão v4 - Direta sem travar no NPM)
 # ─────────────────────────────────────────
