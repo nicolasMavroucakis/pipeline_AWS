@@ -342,7 +342,7 @@ resource "aws_db_instance" "mysql" {
 # AWS Secrets Manager — Credenciais do RDS (Versão v4)
 # ─────────────────────────────────────────
 resource "aws_secretsmanager_secret" "db_credentials" {
-  name                    = "Mydbsecret-v4"
+  name                    = "Mydbsecret"
   description             = "Credenciais do banco de dados RDS - v4"
   recovery_window_in_days = 0 
 
