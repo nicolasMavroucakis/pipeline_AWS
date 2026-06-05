@@ -553,6 +553,7 @@ systemctl daemon-reload
 systemctl enable nodeapp.service
 systemctl start nodeapp.service
 EOF
+)
 
   tag_specifications {
     resource_type = "instance"
