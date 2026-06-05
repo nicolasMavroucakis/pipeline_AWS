@@ -287,6 +287,10 @@ resource "aws_security_group" "alb" {
     Environment = var.environment
     Phase       = "4"
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # ─────────────────────────────────────────
@@ -327,6 +331,10 @@ resource "aws_security_group" "ec2" {
     Environment = var.environment
     Phase       = "4"
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 # ─────────────────────────────────────────
@@ -356,6 +364,10 @@ resource "aws_security_group" "rds" {
     Name        = "rds-${var.environment}"
     Environment = var.environment
     Phase       = "4"
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
