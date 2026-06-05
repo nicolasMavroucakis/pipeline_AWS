@@ -144,6 +144,10 @@ resource "aws_subnet" "private_az1" {
     Environment = var.environment
     Phase       = "4"
   }
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_subnet" "private_az2" {
@@ -155,6 +159,10 @@ resource "aws_subnet" "private_az2" {
     Name        = "subnet-private-az2-${var.environment}"
     Environment = var.environment
     Phase       = "4"
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
