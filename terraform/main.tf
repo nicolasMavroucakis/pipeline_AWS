@@ -489,7 +489,7 @@ resource "aws_launch_template" "app" {
 
   vpc_security_group_ids = [aws_security_group.ec2.id]
 
-  user_data = base64encode(<<EOF
+  user_data = base64encode(<<-EOF
 #!/bin/bash -xe
 export DEBIAN_FRONTEND=noninteractive
 apt update -y
@@ -503,8 +503,8 @@ cd resources/codebase_partner
 npm install aws aws-sdk
 
 # Buscar credenciais do Secrets Manager
-REGION=${var.aws_region}
-SECRET_NAME=rds-credentials-${var.environment}
+REGION=$${var.aws_region}
+SECRET_NAME=rds-credentials-$${var.environment}
 SECRET=$(aws secretsmanager get-secret-value --secret-id $SECRET_NAME --region $REGION --query SecretString --output text)
 
 # Extrair valores
