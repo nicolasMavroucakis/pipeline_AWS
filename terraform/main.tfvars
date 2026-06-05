@@ -1,13 +1,22 @@
 # ─────────────────────────────────────────
-# Fase 3 — VPC + EC2 com app + RDS MySQL
+# Fase 4 — ALB + Auto Scaling + Multi-AZ
 # ─────────────────────────────────────────
 
-environment   = "main"
-aws_region    = "us-east-1"
+environment = "main"
+aws_region  = "us-east-1"
+
+# AMI Ubuntu 22.04 LTS
 ami_id        = "ami-0fc5d935ebf8bc3bc"
 instance_type = "t2.micro"
-key_name      = "aws"
 
-# RDS MySQL Credentials
-db_master_username = "admin"
-db_master_password = "AdminPass12345"
+key_name = "EC2_key_pair"  # 🔧 descomente para acesso SSH
+
+# Credenciais do RDS
+db_username = "admin"
+db_password = "Admin12345678"
+db_name     = "STUDENTS"
+
+# Auto Scaling Group
+asg_min_size         = 2    # Sempre 1 por AZ
+asg_desired_capacity = 2    # 1 por AZ normalmente
+asg_max_size         = 4    # Máximo 2 por AZ

@@ -28,17 +28,42 @@ variable "key_name" {
   default     = ""
 }
 
-variable "db_master_username" {
-  description = "Usuário master do RDS"
+variable "db_username" {
+  description = "Username do RDS"
   type        = string
   default     = "admin"
   sensitive   = true
 }
 
-variable "db_master_password" {
-  description = "Senha master do RDS"
+variable "db_password" {
+  description = "Senha do RDS (mínimo 8 caracteres)"
   type        = string
+  default     = "Admin12345678"
   sensitive   = true
+}
+
+variable "db_name" {
+  description = "Nome do banco de dados"
+  type        = string
+  default     = "STUDENTS"
+}
+
+variable "asg_min_size" {
+  description = "Mínimo de instâncias no Auto Scaling Group"
+  type        = number
+  default     = 2
+}
+
+variable "asg_max_size" {
+  description = "Máximo de instâncias no Auto Scaling Group"
+  type        = number
+  default     = 4
+}
+
+variable "asg_desired_capacity" {
+  description = "Número desejado de instâncias"
+  type        = number
+  default     = 2
 }
 
 # ─────────────────────────────────────────
@@ -53,7 +78,7 @@ terraform {
   }
 
   backend "s3" {
-    bucket = "awsimt20262nicolasgustavo2"
+    bucket = "awsimt2026nicolasgustavo"
     region = "us-east-1"
   }
 }
@@ -73,53 +98,63 @@ resource "aws_vpc" "main" {
   tags = {
     Name        = "vpc-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
+    Phase       = "4"
   }
 }
 
 # ─────────────────────────────────────────
-# Subnet Pública (AZ-1) — para EC2 e NAT Gateway
+# SUBNETS PÚBLICAS (ALB + NAT Gateway)
 # ─────────────────────────────────────────
-resource "aws_subnet" "public" {
+resource "aws_subnet" "public_az1" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = "10.0.1.0/24"
   availability_zone       = "${var.aws_region}a"
   map_public_ip_on_launch = true
 
   tags = {
-    Name        = "subnet-public-${var.environment}"
+    Name        = "subnet-public-az1-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
-    Type        = "Public"
+    Phase       = "4"
+  }
+}
+
+resource "aws_subnet" "public_az2" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "${var.aws_region}b"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name        = "subnet-public-az2-${var.environment}"
+    Environment = var.environment
+    Phase       = "4"
   }
 }
 
 # ─────────────────────────────────────────
-# Subnets Privadas (AZ-1 e AZ-2) — para RDS
+# SUBNETS PRIVADAS (EC2 do ASG + RDS)
 # ─────────────────────────────────────────
 resource "aws_subnet" "private_az1" {
   vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.2.0/24"
+  cidr_block        = "10.0.3.0/24"
   availability_zone = "${var.aws_region}a"
 
   tags = {
     Name        = "subnet-private-az1-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
-    Type        = "Private"
+    Phase       = "4"
   }
 }
 
 resource "aws_subnet" "private_az2" {
   vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.3.0/24"
+  cidr_block        = "10.0.4.0/24"
   availability_zone = "${var.aws_region}b"
 
   tags = {
     Name        = "subnet-private-az2-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
-    Type        = "Private"
+    Phase       = "4"
   }
 }
 
@@ -132,7 +167,7 @@ resource "aws_internet_gateway" "igw" {
   tags = {
     Name        = "igw-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
+    Phase       = "4"
   }
 }
 
@@ -145,30 +180,30 @@ resource "aws_eip" "nat" {
   tags = {
     Name        = "eip-nat-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
+    Phase       = "4"
   }
 
   depends_on = [aws_internet_gateway.igw]
 }
 
 # ─────────────────────────────────────────
-# NAT Gateway — na Subnet Pública
+# NAT Gateway (em subnet pública AZ-1)
 # ─────────────────────────────────────────
 resource "aws_nat_gateway" "nat" {
   allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public.id
+  subnet_id     = aws_subnet.public_az1.id
 
   tags = {
     Name        = "nat-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
+    Phase       = "4"
   }
 
   depends_on = [aws_internet_gateway.igw]
 }
 
 # ─────────────────────────────────────────
-# Route Table Pública — Subnet Pública → IGW
+# Route Table — Subnets Públicas
 # ─────────────────────────────────────────
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
@@ -181,17 +216,23 @@ resource "aws_route_table" "public" {
   tags = {
     Name        = "rt-public-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
+    Phase       = "4"
   }
 }
 
-resource "aws_route_table_association" "public" {
-  subnet_id      = aws_subnet.public.id
+resource "aws_route_table_association" "public_az1" {
+  subnet_id      = aws_subnet.public_az1.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "public_az2" {
+  subnet_id      = aws_subnet.public_az2.id
   route_table_id = aws_route_table.public.id
 }
 
 # ─────────────────────────────────────────
-# Route Table Privada — Subnets Privadas → NAT Gateway
+# Route Table — Subnets Privadas
+# (saída via NAT Gateway)
 # ─────────────────────────────────────────
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
@@ -204,7 +245,7 @@ resource "aws_route_table" "private" {
   tags = {
     Name        = "rt-private-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
+    Phase       = "4"
   }
 }
 
@@ -219,11 +260,11 @@ resource "aws_route_table_association" "private_az2" {
 }
 
 # ─────────────────────────────────────────
-# Security Group — EC2 (Versão v4)
+# Security Group — ALB
 # ─────────────────────────────────────────
-resource "aws_security_group" "ec2" {
-  name        = "ec2-${var.environment}-v4"
-  description = "Security group da EC2 - fase 3 (apenas app Node.js)"
+resource "aws_security_group" "alb" {
+  name        = "alb-${var.environment}-4"
+  description = "Security group do ALB - fase 4"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -234,6 +275,38 @@ resource "aws_security_group" "ec2" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "alb-${var.environment}"
+    Environment = var.environment
+    Phase       = "4"
+  }
+}
+
+# ─────────────────────────────────────────
+# Security Group — EC2 (ASG)
+# ─────────────────────────────────────────
+resource "aws_security_group" "ec2" {
+  name        = "ec2-${var.environment}-4"
+  description = "Security group da EC2 - fase 4 (ASG)"
+  vpc_id      = aws_vpc.main.id
+
+  # Tráfego do ALB
+  ingress {
+    description     = "HTTP from ALB"
+    from_port       = 80
+    to_port         = 80
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb.id]
+  }
+
+  # SSH (opcional)
   ingress {
     description = "SSH"
     from_port   = 22
@@ -250,18 +323,18 @@ resource "aws_security_group" "ec2" {
   }
 
   tags = {
-    Name        = "ec2-${var.environment}-v4"
+    Name        = "ec2-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
+    Phase       = "4"
   }
 }
 
 # ─────────────────────────────────────────
-# Security Group — RDS (Versão v4 para evitar conflito)
+# Security Group — RDS
 # ─────────────────────────────────────────
 resource "aws_security_group" "rds" {
-  name        = "rds-${var.environment}-v4"
-  description = "Security group do RDS - fase 3 (MySQL)"
+  name        = "rds-${var.environment}-4"
+  description = "Security group do RDS - fase 4"
   vpc_id      = aws_vpc.main.id
 
   ingress {
@@ -272,14 +345,6 @@ resource "aws_security_group" "rds" {
     security_groups = [aws_security_group.ec2.id]
   }
 
-  ingress {
-    description     = "MySQL from Lambda"
-    from_port       = 3306
-    to_port         = 3306
-    protocol        = "tcp"
-    security_groups = [aws_security_group.lambda.id]
-  }
-
   egress {
     from_port   = 0
     to_port     = 0
@@ -288,323 +353,393 @@ resource "aws_security_group" "rds" {
   }
 
   tags = {
-    Name        = "rds-${var.environment}-v4"
+    Name        = "rds-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
+    Phase       = "4"
   }
 }
 
 # ─────────────────────────────────────────
-# DB Subnet Group — RDS (Nome alterado para v4)
+# DB Subnet Group
 # ─────────────────────────────────────────
 resource "aws_db_subnet_group" "main" {
-  name       = "db-subnet-group-${var.environment}-v4"
+  name       = "db-subnet-group-${var.environment}"
   subnet_ids = [aws_subnet.private_az1.id, aws_subnet.private_az2.id]
 
   tags = {
-    Name        = "db-subnet-group-${var.environment}-v4"
+    Name        = "db-subnet-group-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
+    Phase       = "4"
   }
 }
 
 # ─────────────────────────────────────────
-# RDS MySQL Instance (Identificador original mantido estável)
+# RDS MySQL — Multi-AZ
 # ─────────────────────────────────────────
-resource "aws_db_instance" "mysql" {
-  identifier            = "mysql-${var.environment}" 
-  engine                = "mysql"
-  engine_version        = "8.0"
-  instance_class        = "db.t3.micro"
-  allocated_storage     = 20
-  storage_type          = "gp2"
-  storage_encrypted     = false
-
-  db_name  = "STUDENTS"
-  username = var.db_master_username
-  password = var.db_master_password
-
-  db_subnet_group_name   = aws_db_subnet_group.main.name
-  vpc_security_group_ids = [aws_security_group.rds.id]
-
-  multi_az               = true 
-  publicly_accessible    = false
-  skip_final_snapshot    = true
+resource "aws_db_instance" "main" {
+  identifier              = "mysql-${var.environment}"
+  engine                  = "mysql"
+  engine_version          = "8.0.45"
+  instance_class          = "db.t3.micro"
+  allocated_storage       = 20
+  storage_type            = "gp2"
+  username                = var.db_username
+  password                = var.db_password
+  db_name                 = var.db_name
+  db_subnet_group_name    = aws_db_subnet_group.main.name
+  vpc_security_group_ids  = [aws_security_group.rds.id]
+  multi_az                = true
+  publicly_accessible     = false
+  skip_final_snapshot     = true
+  backup_retention_period = 7
 
   tags = {
-    Name        = "mysql-${var.environment}"
+    Name        = "rds-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
+    Phase       = "4"
   }
 }
 
 # ─────────────────────────────────────────
-# AWS Secrets Manager — Credenciais do RDS (Versão v4)
+# Secrets Manager
 # ─────────────────────────────────────────
-resource "aws_secretsmanager_secret" "db_credentials" {
-  name                    = "Mydbsecret"
-  description             = "Credenciais do banco de dados RDS - v4"
-  recovery_window_in_days = 0 
+resource "aws_secretsmanager_secret" "rds_credentials" {
+  name                    = "rds-credentials-${var.environment}"
+  recovery_window_in_days = 7
 
   tags = {
-    Name        = "db-credentials-${var.environment}-v4"
+    Name        = "rds-credentials-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
+    Phase       = "4"
   }
 }
 
-resource "aws_secretsmanager_secret_version" "db_credentials" {
-  secret_id = aws_secretsmanager_secret.db_credentials.id
+resource "aws_secretsmanager_secret_version" "rds_credentials" {
+  secret_id = aws_secretsmanager_secret.rds_credentials.id
   secret_string = jsonencode({
-    user     = var.db_master_username
-    db       = "STUDENTS"
-    username = var.db_master_username
-    dbname   = "STUDENTS"
-    password = var.db_master_password
+    username = var.db_username
+    password = var.db_password
     engine   = "mysql"
-    host     = aws_db_instance.mysql.address  # <-- AQUI ESTAVA O PROBLEMA
+    host     = aws_db_instance.main.endpoint
     port     = 3306
+    dbname   = var.db_name
   })
 }
 
 # ─────────────────────────────────────────
-# Usar IAM Profile existente do Lab
+# IAM Role para EC2 (acesso a Secrets Manager)
 # ─────────────────────────────────────────
-data "aws_iam_instance_profile" "lab_profile" {
-  name = "LabInstanceProfile"
+resource "aws_iam_role" "ec2_role" {
+  name = "ec2-role-${var.environment}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Environment = var.environment
+    Phase       = "4"
+  }
 }
+
+resource "aws_iam_role_policy" "ec2_secrets_policy" {
+  name = "ec2-secrets-policy-${var.environment}"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = aws_secretsmanager_secret.rds_credentials.arn
+      }
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "ec2-profile-${var.environment}"
+  role = aws_iam_role.ec2_role.name
+}
+
 # ─────────────────────────────────────────
-# EC2 — Ubuntu com aplicação Node.js (Versão v4 - Direta sem travar no NPM)
+# Launch Template para o ASG
 # ─────────────────────────────────────────
-resource "aws_instance" "app" {
-  ami                    = var.ami_id
-  instance_type          = var.instance_type
-  subnet_id              = aws_subnet.public.id
+resource "aws_launch_template" "app" {
+  name_prefix   = "lt-${var.environment}-"
+  image_id      = var.ami_id
+  instance_type = var.instance_type
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.ec2_profile.name
+  }
+
   vpc_security_group_ids = [aws_security_group.ec2.id]
-  key_name               = var.key_name != "" ? var.key_name : null
-  iam_instance_profile   = data.aws_iam_instance_profile.lab_profile.name
 
   user_data = base64encode(<<EOF
 #!/bin/bash -xe
 export DEBIAN_FRONTEND=noninteractive
 apt update -y
-apt install -y nodejs unzip wget npm curl jq awscli mysql-client
+apt install -y nodejs unzip wget npm curl jq
 
-# Baixar e descompactar o código da aplicação
+# Instalar código da app
 wget https://aws-tc-largeobjects.s3.us-west-2.amazonaws.com/CUR-TF-200-ACCAP1-1-91571/1-lab-capstone-project-1/code.zip -P /home/ubuntu
 cd /home/ubuntu
 unzip code.zip -x "resources/codebase_partner/node_modules/*"
 cd resources/codebase_partner
 npm install aws aws-sdk
 
-# Script corrigido passando as variáveis em linha direto pro executável do Node
-cat > /home/ubuntu/start-app.sh << STARTEOF
-#!/bin/bash
-cd /home/ubuntu/resources/codebase_partner
+# Buscar credenciais do Secrets Manager
+REGION=${var.aws_region}
+SECRET_NAME=rds-credentials-${var.environment}
+SECRET=$(aws secretsmanager get-secret-value --secret-id $SECRET_NAME --region $REGION --query SecretString --output text)
 
-# O Terraform vai cuspir os valores exatos aqui dentro do arquivo:
-APP_DB_HOST="${split(":", aws_db_instance.mysql.endpoint)[0]}"
-APP_DB_USER="${var.db_master_username}"
-APP_DB_PASSWORD="${var.db_master_password}"
-APP_DB_NAME="STUDENTS"
+# Extrair valores
+DB_HOST=$(echo $SECRET | jq -r '.host' | sed 's/:3306//')
+DB_USER=$(echo $SECRET | jq -r '.username')
+DB_PASSWORD=$(echo $SECRET | jq -r '.password')
+DB_NAME=$(echo $SECRET | jq -r '.dbname')
+
+# Exportar variáveis
+export APP_DB_HOST=$DB_HOST
+export APP_DB_USER=$DB_USER
+export APP_DB_PASSWORD=$DB_PASSWORD
+export APP_DB_NAME=$DB_NAME
+export APP_PORT=80
+
+# Persistir variáveis
+cat > /etc/environment << ENVEOF
+APP_DB_HOST=$DB_HOST
+APP_DB_USER=$DB_USER
+APP_DB_PASSWORD=$DB_PASSWORD
+APP_DB_NAME=$DB_NAME
 APP_PORT=80
+ENVEOF
 
-# Chamada direta ignorando o "npm start" travado do package.json
-APP_DB_HOST=\$APP_DB_HOST APP_DB_USER=\$APP_DB_USER APP_DB_PASSWORD=\$APP_DB_PASSWORD APP_DB_NAME=\$APP_DB_NAME APP_PORT=\$APP_PORT node index.js
-STARTEOF
-
-chmod +x /home/ubuntu/start-app.sh
-
-# Criar script de restart automático via systemd
-cat > /etc/systemd/system/nodeapp.service << 'SERVICEEOF'
+# Criar serviço systemd para restart automático
+cat > /etc/systemd/system/nodeapp.service << SVCEOF
 [Unit]
-Description=Node.js Student Application
+Description=Node.js Student Records Application
 After=network.target
 
 [Service]
 Type=simple
-User=root
+User=ubuntu
 WorkingDirectory=/home/ubuntu/resources/codebase_partner
-ExecStart=/home/ubuntu/start-app.sh
-Restart=always
-RestartSec=10
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+RestartSec=5s
+EnvironmentFile=/etc/environment
 
 [Install]
 WantedBy=multi-user.target
-SERVICEEOF
+SVCEOF
 
+# Ativar e iniciar serviço
 systemctl daemon-reload
 systemctl enable nodeapp.service
 systemctl start nodeapp.service
 EOF
-  )
 
-  tags = {
-    Name        = "ec2-app-${var.environment}-v9"
-    Environment = var.environment
-    Phase       = "3"
-    ManagedBy   = "Terraform"
+  tag_specifications {
+    resource_type = "instance"
+
+    tags = {
+      Name        = "ec2-asg-${var.environment}"
+      Environment = var.environment
+      Phase       = "4"
+    }
   }
-
-  depends_on = [aws_db_instance.mysql]
 
   lifecycle {
     create_before_destroy = true
   }
 }
+
 # ─────────────────────────────────────────
-# Security Group — Lambda (Versão v4)
+# Application Load Balancer
 # ─────────────────────────────────────────
-resource "aws_security_group" "lambda" {
-  name        = "lambda-${var.environment}-v4"
-  description = "Security group da Lambda - fase 3 (v4)"
+resource "aws_lb" "main" {
+  name               = "alb-${var.environment}"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb.id]
+  subnets            = [aws_subnet.public_az1.id, aws_subnet.public_az2.id]
+
+  tags = {
+    Name        = "alb-${var.environment}"
+    Environment = var.environment
+    Phase       = "4"
+  }
+}
+
+# ─────────────────────────────────────────
+# Target Group
+# ─────────────────────────────────────────
+resource "aws_lb_target_group" "app" {
+  name        = "tg-${var.environment}"
+  port        = 80
+  protocol    = "HTTP"
   vpc_id      = aws_vpc.main.id
+  target_type = "instance"
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  health_check {
+    healthy_threshold   = 2
+    unhealthy_threshold = 2
+    timeout             = 3
+    interval            = 30
+    path                = "/"
+    matcher             = "200"
   }
 
   tags = {
-    Name        = "lambda-${var.environment}-v4"
+    Name        = "tg-${var.environment}"
     Environment = var.environment
-    Phase       = "3"
+    Phase       = "4"
   }
 }
 
 # ─────────────────────────────────────────
-# Usar IAM Role existente do Lab para Lambda
+# ALB Listener
 # ─────────────────────────────────────────
-data "aws_iam_role" "lambda_role" {
-  name = "LabRole"
+resource "aws_lb_listener" "app" {
+  load_balancer_arn = aws_lb.main.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app.arn
+  }
 }
 
 # ─────────────────────────────────────────
-# Lambda Function — Inicializa banco de dados (Versão v4)
+# Auto Scaling Group
 # ─────────────────────────────────────────
-resource "aws_lambda_function" "db_init" {
-  filename            = "lambda_function_manual.zip"
-  source_code_hash    = filebase64sha256("lambda_function_manual.zip")
-  function_name       = "db-init-${var.environment}-v4"
-  role                = data.aws_iam_role.lambda_role.arn
-  handler             = "lambda_index.handler"
-  runtime             = "python3.11"
-  timeout             = 60
+resource "aws_autoscaling_group" "app" {
+  name                = "asg-${var.environment}"
+  vpc_zone_identifier = [aws_subnet.private_az1.id, aws_subnet.private_az2.id]
+  target_group_arns   = [aws_lb_target_group.app.arn]
+  health_check_type   = "ELB"
+  health_check_grace_period = 60
 
-  vpc_config {
-    subnet_ids         = [aws_subnet.private_az1.id, aws_subnet.private_az2.id]
-    security_group_ids = [aws_security_group.lambda.id]
+  min_size         = var.asg_min_size
+  max_size         = var.asg_max_size
+  desired_capacity = var.asg_desired_capacity
+
+  launch_template {
+    id      = aws_launch_template.app.id
+    version = "$Latest"
   }
 
-  environment {
-    variables = {
-      SECRET_NAME = aws_secretsmanager_secret.db_credentials.name
-      REGION      = var.aws_region
-    }
+  tag {
+    key                 = "Name"
+    value               = "ec2-asg-${var.environment}"
+    propagate_at_launch = true
   }
 
-  tags = {
-    Name        = "db-init-${var.environment}-v4"
-    Environment = var.environment
-    Phase       = "3"
+  tag {
+    key                 = "Environment"
+    value               = var.environment
+    propagate_at_launch = true
   }
 
-  depends_on = [aws_secretsmanager_secret_version.db_credentials]
-}
-
-# ─────────────────────────────────────────
-# Invocação automática da Lambda (Garante execução instantânea)
-# ─────────────────────────────────────────
-resource "aws_lambda_invocation" "db_init" {
-  function_name = aws_lambda_function.db_init.function_name
-
-  input = jsonencode({
-    action    = "initialize_db"
-    timestamp = timestamp() 
-  })
+  tag {
+    key                 = "Phase"
+    value               = "4"
+    propagate_at_launch = true
+  }
 
   depends_on = [
-    aws_db_instance.mysql,
-    aws_secretsmanager_secret_version.db_credentials
+    aws_lb_listener.app,
+    aws_db_instance.main
   ]
+}
+
+# ─────────────────────────────────────────
+# Scaling Policy — Target Tracking (CPU)
+# ─────────────────────────────────────────
+resource "aws_autoscaling_policy" "cpu" {
+  name                   = "asg-cpu-${var.environment}"
+  autoscaling_group_name = aws_autoscaling_group.app.name
+  policy_type            = "TargetTrackingScaling"
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ASGAverageCPUUtilization"
+    }
+    target_value = 60.0  # Escala quando CPU > 60%
+  }
+}
+
+# ─────────────────────────────────────────
+# Scaling Policy — Request Count
+# ─────────────────────────────────────────
+resource "aws_autoscaling_policy" "requests" {
+  name                   = "asg-requests-${var.environment}"
+  autoscaling_group_name = aws_autoscaling_group.app.name
+  policy_type            = "TargetTrackingScaling"
+
+  target_tracking_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ALBRequestCountPerTarget"
+    }
+    target_value = 1000.0  # Escala quando > 1000 req/min por instância
+  }
 }
 
 # ─────────────────────────────────────────
 # Outputs
 # ─────────────────────────────────────────
-output "ec2_public_ip" {
-  description = "IP público da EC2 — use para acessar a aplicação"
-  value       = aws_instance.app.public_ip
+output "alb_dns_name" {
+  description = "DNS do ALB — acesse a aplicação por aqui"
+  value       = aws_lb.main.dns_name
 }
 
-output "ec2_public_dns" {
-  description = "DNS público da EC2"
-  value       = aws_instance.app.public_dns
+output "alb_url" {
+  description = "URL da aplicação via ALB"
+  value       = "http://${aws_lb.main.dns_name}"
 }
 
-output "app_url" {
-  description = "URL da aplicação — abra no browser"
-  value       = "http://${aws_instance.app.public_ip}"
+output "asg_name" {
+  description = "Nome do Auto Scaling Group"
+  value       = aws_autoscaling_group.app.name
+}
+
+output "asg_min_size" {
+  description = "Mínimo de instâncias no ASG"
+  value       = aws_autoscaling_group.app.min_size
+}
+
+output "asg_max_size" {
+  description = "Máximo de instâncias no ASG"
+  value       = aws_autoscaling_group.app.max_size
+}
+
+output "asg_desired_capacity" {
+  description = "Capacidade desejada do ASG"
+  value       = aws_autoscaling_group.app.desired_capacity
 }
 
 output "rds_endpoint" {
-  description = "Endpoint do RDS MySQL"
-  value       = aws_db_instance.mysql.endpoint
+  description = "Endpoint do RDS"
+  value       = aws_db_instance.main.endpoint
 }
 
-output "rds_address" {
-  description = "Endereço do RDS (sem porta)"
-  value       = aws_db_instance.mysql.address
-}
-
-output "rds_port" {
-  description = "Porta do RDS"
-  value       = aws_db_instance.mysql.port
-}
-
-output "secret_name" {
-  description = "Nome da secret no Secrets Manager"
-  value       = aws_secretsmanager_secret.db_credentials.name
-}
-
-output "vpc_id" {
-  description = "ID da VPC"
-  value       = aws_vpc.main.id
-}
-
-output "nat_gateway_ip" {
-  description = "IP público do NAT Gateway"
-  value       = aws_eip.nat.public_ip
-}
-
-output "ec2_instance_id" {
-  description = "ID da instância EC2"
-  value       = aws_instance.app.id
-}
-
-output "security_group_ec2_id" {
-  description = "ID do Security Group da EC2"
-  value       = aws_security_group.ec2.id
-}
-
-output "security_group_rds_id" {
-  description = "ID do Security Group do RDS"
-  value       = aws_security_group.rds.id
-}
-
-output "subnet_public_id" {
-  description = "ID da subnet pública"
-  value       = aws_subnet.public.id
-}
-
-output "subnet_private_az1_id" {
-  description = "ID da subnet privada AZ-1"
-  value       = aws_subnet.private_az1.id
-}
-
-output "subnet_private_az2_id" {
-  description = "ID da subnet privada AZ-2"
-  value       = aws_subnet.private_az2.id
+output "target_group_arn" {
+  description = "ARN do Target Group"
+  value       = aws_lb_target_group.app.arn
 }
