@@ -502,7 +502,7 @@ Type=simple
 User=root
 WorkingDirectory=/home/ubuntu/resources/codebase_partner
 EnvironmentFile=/etc/environment
-ExecStart=/usr/bin/npm start
+ExecStart=/usr/bin/node index.js
 Restart=on-failure
 RestartSec=5s
 
