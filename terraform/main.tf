@@ -480,37 +480,32 @@ wget https://aws-tc-largeobjects.s3.us-west-2.amazonaws.com/CUR-TF-200-ACCAP1-1-
 cd /home/ubuntu
 unzip code.zip -x "resources/codebase_partner/node_modules/*"
 cd resources/codebase_partner
-npm install aws aws-sdk
+npm install
 
-# Buscar credenciais do Secrets Manager
-REGION=$${var.aws_region}
-SECRET_NAME=rds-credentials-$${var.environment}
-SECRET=$(aws secretsmanager get-secret-value --secret-id $SECRET_NAME --region $REGION --query SecretString --output text)
-
-# Extrair valores
-DB_HOST=$(echo $SECRET | jq -r '.host' | sed 's/:3306//')
-DB_USER=$(echo $SECRET | jq -r '.username')
-DB_PASSWORD=$(echo $SECRET | jq -r '.password')
-DB_NAME=$(echo $SECRET | jq -r '.dbname')
-
-# Exportar variáveis
-export APP_DB_HOST=$DB_HOST
-export APP_DB_USER=$DB_USER
-export APP_DB_PASSWORD=$DB_PASSWORD
-export APP_DB_NAME=$DB_NAME
+# Definir credenciais do banco de dados (passadas pelo Terraform)
+export APP_DB_HOST=${aws_db_instance.main.address}
+export APP_DB_USER=${var.db_username}
+export APP_DB_PASSWORD=${var.db_password}
+export APP_DB_NAME=${var.db_name}
 export APP_PORT=80
 
-# Persistir variáveis
-cat > /etc/environment << ENVEOF
-APP_DB_HOST=$DB_HOST
-APP_DB_USER=$DB_USER
-APP_DB_PASSWORD=$DB_PASSWORD
-APP_DB_NAME=$DB_NAME
+# Persistir variáveis de ambiente
+cat > /etc/environment << 'ENVEOF'
+APP_DB_HOST=${aws_db_instance.main.address}
+APP_DB_USER=${var.db_username}
+APP_DB_PASSWORD=${var.db_password}
+APP_DB_NAME=${var.db_name}
 APP_PORT=80
 ENVEOF
 
+# Substituir valores no arquivo de ambiente
+sed -i "s|APP_DB_HOST=.*|APP_DB_HOST=${aws_db_instance.main.address}|" /etc/environment
+sed -i "s|APP_DB_USER=.*|APP_DB_USER=${var.db_username}|" /etc/environment
+sed -i "s|APP_DB_PASSWORD=.*|APP_DB_PASSWORD=${var.db_password}|" /etc/environment
+sed -i "s|APP_DB_NAME=.*|APP_DB_NAME=${var.db_name}|" /etc/environment
+
 # Criar serviço systemd para restart automático
-cat > /etc/systemd/system/nodeapp.service << SVCEOF
+cat > /etc/systemd/system/nodeapp.service << 'SVCEOF'
 [Unit]
 Description=Node.js Student Records Application
 After=network.target
