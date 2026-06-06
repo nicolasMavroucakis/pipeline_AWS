@@ -447,52 +447,11 @@ resource "aws_secretsmanager_secret_version" "rds_credentials" {
 }
 
 # ─────────────────────────────────────────
-# IAM Role para EC2 (acesso a Secrets Manager)
+# IAM Instance Profile (usando LabRole existente)
 # ─────────────────────────────────────────
-resource "aws_iam_role" "ec2_role" {
-  name = "ec2-role-${var.environment}"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-
-  tags = {
-    Environment = var.environment
-    Phase       = "4"
-  }
-}
-
-resource "aws_iam_role_policy" "ec2_secrets_policy" {
-  name = "ec2-secrets-policy-${var.environment}"
-  role = aws_iam_role.ec2_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "secretsmanager:GetSecretValue",
-          "secretsmanager:DescribeSecret"
-        ]
-        Resource = aws_secretsmanager_secret.rds_credentials.arn
-      }
-    ]
-  })
-}
-
 resource "aws_iam_instance_profile" "ec2_profile" {
   name = "ec2-profile-${var.environment}"
-  role = aws_iam_role.ec2_role.name
+  role = "LabRole"
 }
 
 # ─────────────────────────────────────────
