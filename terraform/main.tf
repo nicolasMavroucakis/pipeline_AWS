@@ -461,6 +461,7 @@ resource "aws_launch_template" "app" {
   name_prefix   = "lt-${var.environment}-"
   image_id      = var.ami_id
   instance_type = var.instance_type
+  key_name      = "fasefinal"
 
   iam_instance_profile {
     name = aws_iam_instance_profile.ec2_profile.name
