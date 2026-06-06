@@ -240,7 +240,6 @@ resource "aws_route_table_association" "public_az2" {
 
 # ─────────────────────────────────────────
 # Route Table — Subnets Privadas
-# (saída via NAT Gateway)
 # ─────────────────────────────────────────
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
@@ -309,7 +308,6 @@ resource "aws_security_group" "ec2" {
   description = "Security group da EC2 - fase 4 (ASG)"
   vpc_id      = aws_vpc.main.id
 
-  # Tráfego do ALB
   ingress {
     description     = "HTTP from ALB"
     from_port       = 80
@@ -318,7 +316,6 @@ resource "aws_security_group" "ec2" {
     security_groups = [aws_security_group.alb.id]
   }
 
-  # SSH (opcional)
   ingress {
     description = "SSH"
     from_port   = 22
@@ -421,14 +418,14 @@ resource "aws_db_instance" "main" {
 }
 
 # ─────────────────────────────────────────
-# Secrets Manager
+# Secrets Manager (Corrigido para Mydbsecret)
 # ─────────────────────────────────────────
 resource "aws_secretsmanager_secret" "rds_credentials" {
-  name                    = "rds-credentials-${var.environment}"
-  recovery_window_in_days = 7
+  name                    = "Mydbsecret"
+  recovery_window_in_days = 0 
 
   tags = {
-    Name        = "rds-credentials-${var.environment}"
+    Name        = "rds-credentials-lab"
     Environment = var.environment
     Phase       = "4"
   }
@@ -438,16 +435,18 @@ resource "aws_secretsmanager_secret_version" "rds_credentials" {
   secret_id = aws_secretsmanager_secret.rds_credentials.id
   secret_string = jsonencode({
     username = var.db_username
+    user     = var.db_username
     password = var.db_password
     engine   = "mysql"
-    host     = aws_db_instance.main.endpoint
+    host     = aws_db_instance.main.address
     port     = 3306
     dbname   = var.db_name
+    db       = var.db_name
   })
 }
 
 # ─────────────────────────────────────────
-# IAM Instance Profile (usando LabRole existente)
+# IAM Instance Profile
 # ─────────────────────────────────────────
 resource "aws_iam_instance_profile" "ec2_profile" {
   name = "ec2-profile-${var.environment}"
@@ -455,7 +454,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 }
 
 # ─────────────────────────────────────────
-# Launch Template para o ASG
+# Launch Template para o ASG (Corrigido)
 # ─────────────────────────────────────────
 resource "aws_launch_template" "app" {
   name_prefix   = "lt-${var.environment}-"
@@ -470,28 +469,46 @@ resource "aws_launch_template" "app" {
   vpc_security_group_ids = [aws_security_group.ec2.id]
 
   user_data = base64encode(<<-EOF
-#!/bin/bash -xe
+#!/bin/bash -x
 export DEBIAN_FRONTEND=noninteractive
 apt update -y
-apt install -y nodejs unzip wget npm curl jq
+apt install -y nodejs unzip wget npm curl jq mysql-client
 
 # Instalar código da app
 wget https://aws-tc-largeobjects.s3.us-west-2.amazonaws.com/CUR-TF-200-ACCAP1-1-91571/1-lab-capstone-project-1/code.zip -P /home/ubuntu
 cd /home/ubuntu
 unzip code.zip -x "resources/codebase_partner/node_modules/*"
 cd resources/codebase_partner
-npm install
 
-# Persistir variáveis de ambiente (Terraform interpola os valores antes de executar o script)
+# Instalar dependências sem travar o script
+npm install --no-audit --no-fund
+npm install aws aws-sdk mysql2
+
+# Popula o banco de dados via bash para o ALB não reprovar o Health Check (Erro 500)
+mysql -h ${aws_db_instance.main.address} -u ${var.db_username} -p${var.db_password} -D ${var.db_name} << 'SQLEOF'
+CREATE TABLE IF NOT EXISTS students (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255),
+    address VARCHAR(255),
+    city VARCHAR(255),
+    state VARCHAR(255),
+    email VARCHAR(255),
+    phone VARCHAR(100)
+);
+INSERT IGNORE INTO students (name, email, city) VALUES ('App Fase 4', 'fase4@aws.com', 'Load Balancer Ativo');
+SQLEOF
+
+# Persistir variáveis de ambiente
 cat > /etc/environment << ENVEOF
 APP_DB_HOST=${aws_db_instance.main.address}
 APP_DB_USER=${var.db_username}
 APP_DB_PASSWORD=${var.db_password}
 APP_DB_NAME=${var.db_name}
 APP_PORT=80
+SECRET_NAME=Mydbsecret
 ENVEOF
 
-# Criar serviço systemd para restart automático
+# Criar serviço systemd apontando direto pro Node
 cat > /etc/systemd/system/nodeapp.service << SVCEOF
 [Unit]
 Description=Node.js Student Records Application
@@ -503,7 +520,7 @@ User=root
 WorkingDirectory=/home/ubuntu/resources/codebase_partner
 EnvironmentFile=/etc/environment
 ExecStart=/usr/bin/node index.js
-Restart=on-failure
+Restart=always
 RestartSec=5s
 
 [Install]
@@ -644,7 +661,7 @@ resource "aws_autoscaling_policy" "cpu" {
     predefined_metric_specification {
       predefined_metric_type = "ASGAverageCPUUtilization"
     }
-    target_value = 60.0  # Escala quando CPU > 60%
+    target_value = 60.0  
   }
 }
 
@@ -661,7 +678,7 @@ resource "aws_autoscaling_policy" "requests" {
       predefined_metric_type = "ALBRequestCountPerTarget"
       resource_label         = "${aws_lb.main.arn_suffix}/${aws_lb_target_group.app.arn_suffix}"
     }
-    target_value = 1000.0  # Escala quando > 1000 req/min por instância
+    target_value = 1000.0  
   }
 }
 
