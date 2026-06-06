@@ -482,15 +482,8 @@ unzip code.zip -x "resources/codebase_partner/node_modules/*"
 cd resources/codebase_partner
 npm install
 
-# Definir credenciais do banco de dados (passadas pelo Terraform)
-export APP_DB_HOST=${aws_db_instance.main.address}
-export APP_DB_USER=${var.db_username}
-export APP_DB_PASSWORD=${var.db_password}
-export APP_DB_NAME=${var.db_name}
-export APP_PORT=80
-
-# Persistir variáveis de ambiente
-cat > /etc/environment << 'ENVEOF'
+# Persistir variáveis de ambiente (Terraform interpola os valores antes de executar o script)
+cat > /etc/environment << ENVEOF
 APP_DB_HOST=${aws_db_instance.main.address}
 APP_DB_USER=${var.db_username}
 APP_DB_PASSWORD=${var.db_password}
@@ -498,14 +491,8 @@ APP_DB_NAME=${var.db_name}
 APP_PORT=80
 ENVEOF
 
-# Substituir valores no arquivo de ambiente
-sed -i "s|APP_DB_HOST=.*|APP_DB_HOST=${aws_db_instance.main.address}|" /etc/environment
-sed -i "s|APP_DB_USER=.*|APP_DB_USER=${var.db_username}|" /etc/environment
-sed -i "s|APP_DB_PASSWORD=.*|APP_DB_PASSWORD=${var.db_password}|" /etc/environment
-sed -i "s|APP_DB_NAME=.*|APP_DB_NAME=${var.db_name}|" /etc/environment
-
 # Criar serviço systemd para restart automático
-cat > /etc/systemd/system/nodeapp.service << 'SVCEOF'
+cat > /etc/systemd/system/nodeapp.service << SVCEOF
 [Unit]
 Description=Node.js Student Records Application
 After=network.target
