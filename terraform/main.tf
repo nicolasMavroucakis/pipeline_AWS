@@ -499,12 +499,12 @@ After=network.target
 
 [Service]
 Type=simple
-User=ubuntu
+User=root
 WorkingDirectory=/home/ubuntu/resources/codebase_partner
+EnvironmentFile=/etc/environment
 ExecStart=/usr/bin/npm start
 Restart=on-failure
 RestartSec=5s
-EnvironmentFile=/etc/environment
 
 [Install]
 WantedBy=multi-user.target
