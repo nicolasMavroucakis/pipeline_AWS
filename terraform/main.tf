@@ -676,6 +676,7 @@ resource "aws_autoscaling_policy" "requests" {
   target_tracking_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ALBRequestCountPerTarget"
+      resource_label         = "${aws_lb.main.arn_suffix}/${aws_lb_target_group.app.arn_suffix}"
     }
     target_value = 1000.0  # Escala quando > 1000 req/min por instância
   }
